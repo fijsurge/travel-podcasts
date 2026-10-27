@@ -28,10 +28,32 @@
 <main id="main">
   <!-- Library -->
   <section id="view-library" class="view">
-    <p class="lede" id="lede">Episodes are read aloud by your phone's own voices. Pick one and press play.</p>
-    <ul class="cards" id="cards"></ul>
-    <button class="ghost wide" id="add-btn">＋ Add an episode</button>
+    <p class="lede" id="lede">Episodes are read aloud by natural voices (or your phone's own). Pick one and press play.</p>
+    <div class="tabs" id="tabs" role="group" aria-label="Library">
+      <button type="button" data-tab="episodes">Episodes</button>
+      <button type="button" data-tab="playlists">Playlists</button>
+    </div>
+    <div id="pane-episodes">
+      <div class="chips" id="place-chips" hidden></div>
+      <ul class="cards" id="cards"></ul>
+      <button class="ghost wide" id="add-btn">＋ Add an episode</button>
+      <button class="linkish" id="show-hidden" hidden></button>
+    </div>
+    <div id="pane-playlists" hidden>
+      <ul class="cards" id="pl-cards"></ul>
+      <button class="ghost wide" id="pl-new">＋ New playlist</button>
+    </div>
     <p class="fine" id="support-note" hidden></p>
+  </section>
+
+  <!-- Playlist -->
+  <section id="view-playlist" class="view" hidden>
+    <button class="primary wide" id="pl-play">Play all</button>
+    <ul class="rows" id="pl-items"></ul>
+    <div class="row-actions">
+      <button class="ghost small" id="pl-rename" type="button">Rename</button>
+      <button class="ghost small danger" id="pl-delete" type="button">Delete playlist</button>
+    </div>
   </section>
 
   <!-- Player -->
@@ -71,6 +93,35 @@
     </button>
   </div>
 </footer>
+
+<!-- Episode options -->
+<dialog id="dlg-ep">
+  <form method="dialog" class="sheet">
+    <h2 id="ep-opts-title"></h2>
+    <div id="ep-opts"></div>
+    <button class="primary wide" value="close">Close</button>
+  </form>
+</dialog>
+
+<!-- Add to playlist -->
+<dialog id="dlg-pl">
+  <form method="dialog" class="sheet">
+    <h2>Add to a playlist</h2>
+    <div id="pl-pick"></div>
+    <button class="ghost wide" id="pl-pick-new" type="button">＋ New playlist</button>
+    <button class="primary wide" value="close">Done</button>
+  </form>
+</dialog>
+
+<!-- Name -->
+<dialog id="dlg-name">
+  <form method="dialog" class="sheet">
+    <h2 id="name-title">Name</h2>
+    <input id="name-input" type="text" maxlength="60" autocomplete="off">
+    <button class="primary wide" id="name-save" type="button">Save</button>
+    <button class="ghost wide" value="close">Cancel</button>
+  </form>
+</dialog>
 
 <!-- Chapter list -->
 <dialog id="dlg-chapters">

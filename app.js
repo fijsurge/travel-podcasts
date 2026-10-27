@@ -225,56 +225,217 @@
     await refreshOffline(); renderLibrary();
   }
 
-  function renderLibrary() {
+  /* ---------- organizing: remove/hide, place filter, playlists ---------- */
+  let hidden = store.get('tp.hidden', []);
+  let playlists = store.get('tp.playlists', []);
+  let tab = store.get('tp.tab', 'episodes');
+  let placeFilter = '';
+  let showHidden = false;
+  let curPl = null; // the playlist the open episode is being played from
+  const saveHidden = () => store.set('tp.hidden', hidden);
+  const savePlaylists = () => store.set('tp.playlists', playlists);
+  const epById = (id) => library.find((e) => e.id === id);
+  const plById = (id) => playlists.find((p) => p.id === id);
+  const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  const plMinutes = (p) => p.items.reduce((n, id) => n + (epById(id) ? epById(id).minutes : 0), 0);
+
+  function buildCard(e, removed) {
+    const li = mk('li', 'card' + (removed ? ' removed' : ''));
+    const pct = percent(e);
+    li.append(mk('span', 'place', removed ? 'Removed' : e.place || (e.user ? 'Added by you' : 'Episode')));
+    li.append(mk('h2', '', e.title));
+    if (e.blurb) li.append(mk('p', '', e.blurb));
+    const ac = audioCount(e);
+    const audioNote = ac === e.chapters.length ? ' · natural voice' : ac ? ` · natural voice for ${ac} of ${e.chapters.length} parts` : '';
+    li.append(mk('div', 'meta', `${e.chapters.length} parts · about ${e.minutes} min${audioNote}${pct ? ' · ' + (pct >= 100 ? 'finished' : pct + '% heard') : ''}`));
+    if (!removed && pct > 0 && pct < 100) {
+      const bar = mk('div', 'progress', ''); const fill = document.createElement('div'); fill.style.width = pct + '%'; bar.append(fill); li.append(bar);
+    }
+    const actions = mk('div', 'actions', '');
+    if (removed) {
+      const back = mk('button', 'ghost small', 'Bring back');
+      back.addEventListener('click', () => { hidden = hidden.filter((id) => id !== e.id); saveHidden(); renderLibrary(); });
+      actions.append(back);
+      li.append(actions);
+      return li;
+    }
+    const go = mk('button', 'primary', pct > 0 && pct < 100 ? 'Resume' : pct >= 100 ? 'Listen again' : 'Listen');
+    go.addEventListener('click', () => {
+      if (pct >= 100) { delete progress[e.id]; saveProgress(); }
+      location.hash = '#/e/' + encodeURIComponent(e.id);
+    });
+    actions.append(go);
+    if (ac && 'caches' in window) {
+      const saved = savedOffline(e);
+      const off = mk('button', 'ghost small', saved ? 'Saved offline ✓' : 'Save for offline');
+      if (saved) { off.addEventListener('click', () => removeOffline(e)); off.title = 'Tap to remove the saved audio'; }
+      else off.addEventListener('click', () => saveOffline(e, off));
+      actions.append(off);
+    }
+    const more = mk('button', 'icon-btn more', '⋯');
+    more.setAttribute('aria-label', 'More options for ' + e.title);
+    more.addEventListener('click', () => openEpOptions(e));
+    actions.append(more);
+    li.append(actions);
+    return li;
+  }
+
+  function renderEpisodes() {
+    const visible = library.filter((e) => !hidden.includes(e.id));
+    const places = [...new Set(visible.map((e) => e.place).filter(Boolean))];
+    if (placeFilter && !places.includes(placeFilter)) placeFilter = '';
+    const chips = $('place-chips');
+    chips.textContent = '';
+    chips.hidden = places.length < 2;
+    ['', ...places].forEach((pl) => {
+      const b = mk('button', 'chip-btn', pl || 'All');
+      b.type = 'button';
+      b.setAttribute('aria-pressed', String(placeFilter === pl));
+      b.addEventListener('click', () => { placeFilter = pl; renderLibrary(); });
+      chips.append(b);
+    });
     const ul = $('cards');
     ul.textContent = '';
-    if (!library.length) {
-      const li = document.createElement('li');
-      li.className = 'fine';
-      li.textContent = 'No episodes yet. Add one below.';
-      ul.append(li);
-    }
-    library.forEach((ep) => {
-      const li = document.createElement('li');
-      li.className = 'card';
-      const pct = percent(ep);
-      const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; e.textContent = text; return e; };
-      li.append(mk('span', 'place', ep.place || (ep.user ? 'Added by you' : 'Episode')));
-      li.append(mk('h2', '', ep.title));
-      if (ep.blurb) li.append(mk('p', '', ep.blurb));
-      const ac = audioCount(ep);
-      const audioNote = ac === ep.chapters.length ? ' · natural voice' : ac ? ` · natural voice for ${ac} of ${ep.chapters.length} parts` : '';
-      li.append(mk('div', 'meta', `${ep.chapters.length} parts · about ${ep.minutes} min${audioNote}${pct ? ' · ' + (pct >= 100 ? 'finished' : pct + '% heard') : ''}`));
-      if (pct > 0 && pct < 100) {
-        const bar = mk('div', 'progress', ''); const fill = document.createElement('div'); fill.style.width = pct + '%'; bar.append(fill); li.append(bar);
-      }
+    const shown = visible.filter((e) => !placeFilter || e.place === placeFilter);
+    if (!shown.length) ul.append(mk('li', 'fine', library.length ? 'Nothing here.' : 'No episodes yet. Add one below.'));
+    shown.forEach((e) => ul.append(buildCard(e)));
+    const hid = library.filter((e) => hidden.includes(e.id));
+    const btn = $('show-hidden');
+    btn.hidden = !hid.length;
+    btn.textContent = showHidden ? 'Hide the removed episodes' : `Show ${hid.length} removed episode${hid.length === 1 ? '' : 's'}`;
+    if (showHidden) hid.forEach((e) => ul.append(buildCard(e, true)));
+  }
+
+  function renderPlaylists() {
+    const ul = $('pl-cards');
+    ul.textContent = '';
+    if (!playlists.length) ul.append(mk('li', 'fine', 'No playlists yet. Make one for a trip, a commute or a topic, then add episodes with the ⋯ button on any episode.'));
+    playlists.forEach((p) => {
+      const li = mk('li', 'card');
+      li.append(mk('h2', '', p.name));
+      const n = p.items.filter(epById).length;
+      li.append(mk('div', 'meta', `${n} episode${n === 1 ? '' : 's'} · about ${plMinutes(p)} min`));
       const actions = mk('div', 'actions', '');
-      const go = mk('button', 'primary', pct > 0 && pct < 100 ? 'Resume' : pct >= 100 ? 'Listen again' : 'Listen');
-      go.addEventListener('click', () => {
-        if (pct >= 100) { delete progress[ep.id]; saveProgress(); }
-        location.hash = '#/e/' + encodeURIComponent(ep.id);
-      });
-      actions.append(go);
-      if (ac && 'caches' in window) {
-        const saved = savedOffline(ep);
-        const off = mk('button', 'ghost small', saved ? 'Saved offline \u2713' : 'Save for offline');
-        if (saved) { off.addEventListener('click', () => removeOffline(ep)); off.title = 'Tap to remove the saved audio'; }
-        else off.addEventListener('click', () => saveOffline(ep, off));
-        actions.append(off);
-      }
-      if (ep.user) {
-        const del = mk('button', 'del', 'Remove');
-        del.addEventListener('click', () => {
-          if (!confirm('Remove "' + ep.title + '" from this phone?')) return;
-          userEps = userEps.filter((e) => e.id !== ep.id); store.set('tp.user', userEps);
-          delete progress[ep.id]; saveProgress();
-          loadLibrary().then(renderLibrary);
-        });
-        actions.append(del);
-      }
+      const open = mk('button', 'primary', 'Open');
+      open.addEventListener('click', () => { location.hash = '#/p/' + encodeURIComponent(p.id); });
+      actions.append(open);
       li.append(actions);
       ul.append(li);
     });
+  }
+
+  function renderLibrary() {
+    document.querySelectorAll('#tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tab === tab)));
+    $('pane-episodes').hidden = tab !== 'episodes';
+    $('pane-playlists').hidden = tab !== 'playlists';
+    if (tab === 'episodes') renderEpisodes(); else renderPlaylists();
+  }
+
+  function askName(title, initial, cb) {
+    $('name-title').textContent = title;
+    $('name-input').value = initial || '';
+    $('name-save').onclick = () => {
+      const v = $('name-input').value.trim();
+      if (!v) return;
+      $('dlg-name').close();
+      cb(v);
+    };
+    $('dlg-name').showModal();
+  }
+
+  function removeUserEp(e) {
+    if (!confirm('Delete "' + e.title + '" from this phone? This cannot be undone.')) return;
+    userEps = userEps.filter((x) => x.id !== e.id); store.set('tp.user', userEps);
+    delete progress[e.id]; saveProgress();
+    playlists.forEach((p) => { p.items = p.items.filter((id) => id !== e.id); }); savePlaylists();
+    loadLibrary().then(renderLibrary);
+  }
+
+  function openEpOptions(e) {
+    $('ep-opts-title').textContent = e.title;
+    const box = $('ep-opts');
+    box.textContent = '';
+    const add = (label, fn, cls) => {
+      const b = mk('button', cls || 'ghost wide', label);
+      b.type = 'button';
+      b.addEventListener('click', () => { $('dlg-ep').close(); fn(); });
+      box.append(b);
+    };
+    add('Add to a playlist', () => openPlPick(e));
+    if (e.user) add('Delete from this phone', () => removeUserEp(e), 'ghost wide danger');
+    else add('Remove from my list', () => {
+      hidden.push(e.id); saveHidden(); renderLibrary();
+      showToast('Removed. Bring it back with "Show removed episodes".');
+    }, 'ghost wide danger');
+    $('dlg-ep').showModal();
+  }
+
+  function openPlPick(e) {
+    const box = $('pl-pick');
+    const draw = () => {
+      box.textContent = '';
+      if (!playlists.length) box.append(mk('p', 'fine', 'No playlists yet.'));
+      playlists.forEach((p) => {
+        const row = mk('label', 'field check');
+        const cb = document.createElement('input');
+        cb.type = 'checkbox'; cb.checked = p.items.includes(e.id);
+        cb.addEventListener('change', () => {
+          if (cb.checked) { if (!p.items.includes(e.id)) p.items.push(e.id); } else p.items = p.items.filter((x) => x !== e.id);
+          savePlaylists();
+        });
+        row.append(cb, document.createTextNode(' ' + p.name));
+        box.append(row);
+      });
+    };
+    draw();
+    $('pl-pick-new').onclick = () => {
+      $('dlg-pl').close();
+      askName('New playlist', '', (name) => {
+        playlists.push({ id: 'pl-' + Date.now().toString(36), name, items: [e.id] });
+        savePlaylists(); renderLibrary(); showToast('Added to "' + name + '".');
+      });
+    };
+    $('dlg-pl').showModal();
+  }
+
+  function renderPlaylistView(p) {
+    p.items = p.items.filter(epById);
+    const ul = $('pl-items');
+    ul.textContent = '';
+    $('pl-play').hidden = !p.items.length;
+    $('pl-play').onclick = () => {
+      location.hash = '#/e/' + encodeURIComponent(p.items[0]) + '?pl=' + encodeURIComponent(p.id) + '&play=1';
+    };
+    if (!p.items.length) ul.append(mk('li', 'fine', 'This playlist is empty. Use the ⋯ button on an episode to add it.'));
+    p.items.forEach((eid, i) => {
+      const e = epById(eid);
+      const li = mk('li', 'row');
+      const t = mk('button', 'row-title', '');
+      t.append(mk('span', '', e.title), mk('small', '', `${e.place ? e.place + ' · ' : ''}about ${e.minutes} min`));
+      t.addEventListener('click', () => { location.hash = '#/e/' + encodeURIComponent(eid) + '?pl=' + encodeURIComponent(p.id); });
+      li.append(t);
+      const btn = (label, aria, fn, disabled) => {
+        const b = mk('button', 'icon-btn', label); b.setAttribute('aria-label', aria); b.disabled = !!disabled;
+        b.addEventListener('click', fn); li.append(b);
+      };
+      const move = (d) => () => { const j = i + d; [p.items[i], p.items[j]] = [p.items[j], p.items[i]]; savePlaylists(); renderPlaylistView(p); };
+      btn('↑', 'Move up', move(-1), i === 0);
+      btn('↓', 'Move down', move(1), i === p.items.length - 1);
+      btn('✕', 'Remove from playlist', () => { p.items.splice(i, 1); savePlaylists(); renderPlaylistView(p); });
+      ul.append(li);
+    });
+    $('pl-rename').onclick = () => askName('Rename playlist', p.name, (name) => { p.name = name; savePlaylists(); $('title').textContent = name; });
+    $('pl-delete').onclick = () => {
+      if (!confirm('Delete the playlist "' + p.name + '"? The episodes stay in your library.')) return;
+      playlists = playlists.filter((x) => x.id !== p.id); savePlaylists(); location.hash = '';
+    };
+  }
+
+  function nextInPlaylist() {
+    const p = curPl && plById(curPl);
+    if (!p || !ep) return null;
+    const i = p.items.indexOf(ep.id);
+    return i >= 0 ? p.items.slice(i + 1).find(epById) || null : null;
   }
 
   /* ---------- player state ---------- */
@@ -672,39 +833,66 @@
     if (settings.autonext && chIdx + 1 < ep.chapters.length) { await gotoChapter(chIdx + 1, true); return; }
     const last = chIdx + 1 >= ep.chapters.length;
     playing = false; stopAll(); switching = false; setPlayingUi(); unlockScreen();
-    if (last) { remember(true); showToast('Episode finished.'); }
-    else await gotoChapter(chIdx + 1, false);
+    if (last) {
+      remember(true);
+      const nx = nextInPlaylist();
+      if (nx) {
+        showToast('Next in your playlist\u2026');
+        location.hash = '#/e/' + encodeURIComponent(nx) + '?pl=' + encodeURIComponent(curPl) + '&play=1';
+        return;
+      }
+      showToast('Episode finished.');
+    } else await gotoChapter(chIdx + 1, false);
   }
 
   /* ---------- views and routing ---------- */
   function showLibrary() {
     if (playing) pause();
-    ep = null;
-    $('view-library').hidden = false; $('view-player').hidden = true; $('transport').hidden = true;
+    ep = null; curPl = null;
+    $('view-library').hidden = false; $('view-player').hidden = true; $('view-playlist').hidden = true; $('transport').hidden = true;
     $('back').hidden = true; $('title').textContent = 'Travel Podcasts';
     document.title = 'Travel Podcasts';
     renderLibrary();
     if ('caches' in window) refreshOffline().then(() => { if (!ep) renderLibrary(); });
   }
 
-  async function showEpisode(id) {
+  function showPlaylist(id) {
+    const p = plById(id);
+    if (!p) { location.hash = ''; return; }
+    if (playing) pause();
+    ep = null; curPl = null; tab = 'playlists'; store.set('tp.tab', tab);
+    $('view-library').hidden = true; $('view-player').hidden = true; $('transport').hidden = true; $('view-playlist').hidden = false;
+    $('back').hidden = false; $('title').textContent = p.name; document.title = p.name + ' \u00b7 Travel Podcasts';
+    renderPlaylistView(p);
+  }
+
+  async function showEpisode(id, plId, autoplay) {
     const found = library.find((e) => e.id === id);
     if (!found) { location.hash = ''; return; }
+    curPl = plId && plById(plId) ? plId : null;
     if (ep && ep.id === id) return;
     if (playing) pause();
     ep = found;
     const pr = progress[ep.id];
     const ch = pr && !pr.done && ep.chapters[pr.ch] ? pr.ch : 0;
     const at = pr && !pr.done ? pr.u || 0 : 0;
-    $('view-library').hidden = true; $('view-player').hidden = false; $('transport').hidden = false;
+    $('view-library').hidden = true; $('view-playlist').hidden = true; $('view-player').hidden = false; $('transport').hidden = false;
     $('back').hidden = false; $('title').textContent = ep.title; document.title = ep.title + ' \u00b7 Travel Podcasts';
     await gotoChapter(ch, false, at);
     if (idx > 0) setTimeout(() => mark(idx, true), 50);
+    if (autoplay) play();
   }
 
   function route() {
-    const m = location.hash.match(/^#\/e\/(.+)$/);
-    if (m) showEpisode(decodeURIComponent(m[1])); else showLibrary();
+    const h = location.hash;
+    let m = h.match(/^#\/e\/([^?]+)(?:\?(.*))?$/);
+    if (m) {
+      const q = new URLSearchParams(m[2] || '');
+      showEpisode(decodeURIComponent(m[1]), q.get('pl'), q.get('play') === '1');
+      return;
+    }
+    m = h.match(/^#\/p\/(.+)$/);
+    if (m) showPlaylist(decodeURIComponent(m[1])); else showLibrary();
   }
 
   /* ---------- UI wiring ---------- */
@@ -763,7 +951,15 @@
   }
 
   function wire() {
-    $('back').addEventListener('click', () => { location.hash = ''; });
+    $('back').addEventListener('click', () => { location.hash = ep && curPl ? '#/p/' + encodeURIComponent(curPl) : ''; });
+    document.querySelectorAll('#tabs button').forEach((b) => b.addEventListener('click', () => {
+      tab = b.dataset.tab; store.set('tp.tab', tab); renderLibrary();
+    }));
+    $('show-hidden').addEventListener('click', () => { showHidden = !showHidden; renderLibrary(); });
+    $('pl-new').addEventListener('click', () => askName('New playlist', '', (name) => {
+      playlists.push({ id: 'pl-' + Date.now().toString(36), name, items: [] }); savePlaylists(); renderLibrary();
+    }));
+    $('dlg-pl').addEventListener('close', renderLibrary);
     $('play').addEventListener('click', toggle);
     $('prev-ch').addEventListener('click', () => {
       // like a CD player: first press restarts the chapter, a second press goes back one
