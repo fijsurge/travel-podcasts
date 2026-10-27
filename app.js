@@ -442,7 +442,66 @@
   }
   const COVERS = [['#12404f', '#1d6177'], ['#4a2234', '#74344d'], ['#26402f', '#3f6a4e'], ['#2b2f5e', '#474d92'], ['#5a3418', '#8a5428'], ['#233a56', '#385f8c']];
   const CREAM = '#f2ead2', SIGNAL = '#f0b93b';
-  // A route with one stop per chapter. Heard stops are filled, the stop you are on is ringed, the rest are empty.
+  // Covers are small illustrations of the place itself: a skyline of its landmarks, with the kind of episode in the foreground.
+  //   overview: the sun coming up behind the skyline.   walk: a footpath toward it, one stop per chapter.
+  //   deep dive: layers of history under it, one per chapter.   Dots show how far you have listened.
+  const INK = '#06131a';
+  const r1 = (v) => Math.round(v * 10) / 10;
+  const shade = (hex, k) => '#' + [1, 3, 5].map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) * k).toString(16).padStart(2, '0')).join('');
+  function gabled(x, w, top, step, lit) {
+    const cx = w / 2, pts = [[x, 68], [x, top]];
+    for (let k = 0; k < 3; k++) { const s = (w / 2 - 1) * (k / 2.4); pts.push([x + s, top - k * step]); pts.push([x + s + 1.4, top - k * step]); pts.push([x + s + 1.4, top - (k + 1) * step]); }
+    // mirror the steps down the other side
+    const left = pts.slice(2);
+    const right = left.map(([px, py]) => [x + w - (px - x), py]).reverse();
+    return `<polygon points="${[...pts, ...right, [x + w, 68]].map((p) => p.map(r1).join(',')).join(' ')}"/>` +
+      (lit ? `<rect x="${r1(x + cx - 0.9)}" y="${r1(top + 3)}" width="1.8" height="2.2" fill="${SIGNAL}" opacity=".85" stroke="none"/>` : '');
+  }
+  function houses(x0, x1, rnd, minH, maxH) {
+    let out = '', x = x0;
+    while (x < x1 - 7) { const w = 7 + Math.floor(rnd() * 4); out += gabled(x, w, 68 - (minH + rnd() * (maxH - minH)), 2.2, rnd() > 0.45); x += w + 0.6; }
+    return out;
+  }
+  function spire(cx, base, top, w) { return `<polygon points="${r1(cx - w)},${base} ${r1(cx)},${top} ${r1(cx + w)},${base}"/>`; }
+  function motif(place, rnd) {
+    const pl = fold(place || '');
+    if (pl.includes('brussel') || pl.includes('bruxelles')) {
+      // guild houses, the town hall with its spire, the Atomium
+      const sph = [[82, 21], [73, 31], [91, 31], [82, 40], [73, 49], [91, 49], [82, 60]];
+      const tubes = [[0, 1], [0, 2], [1, 3], [2, 3], [3, 4], [3, 5], [4, 6], [5, 6], [1, 4], [2, 5], [6, 6]];
+      let a = houses(0, 41, rnd, 12, 22);
+      a += `<rect x="42" y="46" width="19" height="22"/><rect x="48.5" y="28" width="5" height="19"/><rect x="47.3" y="22" width="7.4" height="7"/>${spire(51, 22, 3, 3.8)}<rect x="50.6" y="1" width=".8" height="3"/>`;
+      a += `<rect x="45" y="42" width="3" height="5"/><rect x="55" y="42" width="3" height="5"/>`;
+      a += `<g fill="none" stroke="${INK}" stroke-width="1.5">${tubes.map(([i, j]) => `<line x1="${sph[i][0]}" y1="${sph[i][1]}" x2="${sph[j][0]}" y2="${j === i ? 68 : sph[j][1]}"/>`).join('')}</g>`;
+      a += sph.map(([sx, sy]) => `<circle cx="${sx}" cy="${sy}" r="4.3"/>`).join('');
+      a += `<rect x="80.6" y="58" width="2.8" height="10"/>`;
+      return a;
+    }
+    if (pl.includes('luxembourg')) {
+      // the cliff and casemates, the Adolphe Bridge, the cathedral spires
+      let a = `<polygon points="0,68 0,36 6,34 9,38 14,35 17,41 23,40 26,47 32,52 38,68"/>`;
+      for (let k = 0; k < 5; k++) a += `<rect x="${1 + k * 3.4}" y="${31.5 + (k % 2) * 0.4}" width="2" height="3"/>`;
+      a += `<rect x="3" y="24" width="5" height="11"/>${spire(5.5, 24, 15, 3.4)}`;
+      a += `<path d="M38,68 Q59,30 80,68 L74.5,68 Q59,41 43.5,68Z"/><rect x="34" y="43.5" width="51" height="3.2"/>`;
+      a += `<rect x="46" y="46.5" width="2" height="8"/><rect x="58" y="46.5" width="2" height="4"/><rect x="70" y="46.5" width="2" height="8"/>`;
+      a += `<polygon points="82,68 82,40 100,38 100,68"/>${spire(88, 40, 14, 2.2)}${spire(94.5, 38, 22, 2)}<rect x="86" y="40" width="4.2" height="8"/>`;
+      a += `<rect x="84.6" y="52" width="1.8" height="2.4" fill="${SIGNAL}" opacity=".85" stroke="none"/><rect x="92" y="55" width="1.8" height="2.4" fill="${SIGNAL}" opacity=".85" stroke="none"/>`;
+      return a;
+    }
+    if (pl.includes('brugge') || pl.includes('bruges')) {
+      // the belfry among gabled houses
+      let a = houses(0, 43, rnd, 12, 20) + houses(58, 100, rnd, 12, 20);
+      a += `<rect x="44" y="26" width="13" height="42"/>`;
+      for (let k = 0; k < 4; k++) a += `<rect x="${44 + k * 3.6}" y="23.5" width="2.2" height="3"/>`;
+      a += `<rect x="46.2" y="12" width="8.6" height="12"/>${spire(50.5, 12, 3, 4.6)}<rect x="50.1" y="0" width=".8" height="3.4"/>`;
+      a += `<rect x="49" y="31" width="3" height="5" fill="${SIGNAL}" opacity=".85" stroke="none"/><rect x="49" y="42" width="3" height="5" fill="${SIGNAL}" opacity=".85" stroke="none"/>`;
+      return a;
+    }
+    // any other old town: gabled houses and a church spire
+    const sx = 55 + rnd() * 20;
+    return houses(0, sx - 6, rnd, 12, 22) + houses(sx + 8, 100, rnd, 12, 22) +
+      `<rect x="${r1(sx - 5)}" y="38" width="10" height="30"/><rect x="${r1(sx - 3)}" y="28" width="6" height="11"/>${spire(sx, 28, 6, 3.6)}<rect x="${r1(sx - 0.4)}" y="3" width=".8" height="4"/>`;
+  }
   function coverSvg(e) {
     const rnd = rng(hashStr(e.id));
     const [bg, hi] = COVERS[hashStr(e.place || e.series || e.id) % COVERS.length];
@@ -451,34 +510,33 @@
     const pr = progress[e.id];
     const heard = pr ? (pr.done ? n : Math.min(pr.ch, n)) : 0;
     const cur = pr && !pr.done ? Math.min(pr.ch, n - 1) : -1;
-    const pts = [];
-    let y = 34 + rnd() * 30;
-    for (let i = 0; i < n; i++) { y += (rnd() - 0.5) * 34; y = Math.max(f === 'overview' ? 44 : 24, Math.min(80, y)); pts.push([12 + (76 * i) / (n - 1), y]); }
-    const r1 = (v) => Math.round(v * 10) / 10;
-    let d = `M${r1(pts[0][0])},${r1(pts[0][1])}`;
-    for (let i = 0; i < n - 1; i++) {
-      const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
-      d += ` C${r1(p1[0] + (p2[0] - p0[0]) / 6)},${r1(p1[1] + (p2[1] - p0[1]) / 6)} ${r1(p2[0] - (p3[0] - p1[0]) / 6)},${r1(p2[1] - (p3[1] - p1[1]) / 6)} ${r1(p2[0])},${r1(p2[1])}`;
-    }
-    let art = '';
+    const dot = (x, y, i, s) => i < heard ? `<circle cx="${r1(x)}" cy="${r1(y)}" r="${r1(2.6 * s)}" fill="${SIGNAL}"/>`
+      : i === cur ? `<circle cx="${r1(x)}" cy="${r1(y)}" r="${r1(3 * s)}" fill="${bg}" stroke="${SIGNAL}" stroke-width="${r1(1.6 * s)}"/>`
+        : `<circle cx="${r1(x)}" cy="${r1(y)}" r="${r1(2.3 * s)}" fill="${bg}" stroke="${CREAM}" stroke-width="${r1(1.1 * s)}"/>`;
+    let out = `<rect width="100" height="100" fill="${bg}"/>`;
     if (f === 'overview') {
-      const cx = 30 + rnd() * 40;
-      art += `<path d="M${r1(cx - 17)},64 A17 17 0 0 1 ${r1(cx + 17)},64Z" fill="${SIGNAL}"/><rect x="0" y="64" width="100" height="36" fill="${hi}" opacity=".55"/><path d="M0,64H100" stroke="${CREAM}" stroke-width=".8" opacity=".5"/>`;
-    } else if (f === 'deep') {
-      const cx = 25 + rnd() * 50, cy = 25 + rnd() * 50, rot = Math.round(rnd() * 60 - 30);
-      for (let k = 1; k <= 6; k++) art += `<ellipse cx="${r1(cx)}" cy="${r1(cy)}" rx="${k * 9}" ry="${r1(k * 7)}" transform="rotate(${rot} ${r1(cx)} ${r1(cy)})" fill="none" stroke="${CREAM}" stroke-width=".7" opacity="${r1(0.32 - k * 0.04)}"/>`;
-    } else {
-      art += `<path d="M-5,${r1(86 - rnd() * 8)} Q30,${r1(60 + rnd() * 10)} 55,${r1(76 + rnd() * 6)} T105,${r1(66 + rnd() * 10)}" fill="none" stroke="${hi}" stroke-width="9" stroke-linecap="round" opacity=".5"/>`;
+      const cx = 22 + rnd() * 56;
+      out += `<circle cx="${r1(cx)}" cy="64" r="30" fill="${SIGNAL}" opacity=".16"/><circle cx="${r1(cx)}" cy="64" r="21" fill="${SIGNAL}" opacity=".22"/><circle cx="${r1(cx)}" cy="64" r="13" fill="${SIGNAL}"/>`;
     }
-    const line = `<path d="${d}" fill="none" stroke="${CREAM}" stroke-width="${f === 'walk' ? 1.7 : 1.9}" stroke-linecap="round"${f === 'walk' ? ' stroke-dasharray="0.1 3.6"' : ''}/>`;
-    let dots = '';
-    pts.forEach((p, i) => {
-      const x = r1(p[0]), yy = r1(p[1]);
-      if (i < heard) dots += `<circle cx="${x}" cy="${yy}" r="3.2" fill="${SIGNAL}"/>`;
-      else if (i === cur) dots += `<circle cx="${x}" cy="${yy}" r="3.9" fill="${bg}" stroke="${SIGNAL}" stroke-width="1.8"/>`;
-      else dots += `<circle cx="${x}" cy="${yy}" r="2.8" fill="${bg}" stroke="${CREAM}" stroke-width="1.2"/>`;
-    });
-    return `<svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="100" height="100" fill="${bg}"/>${art}${line}${dots}</svg>`;
+    const sil = shade(bg, 0.4);
+    out += `<g fill="${sil}" stroke="${sil}" stroke-width=".2">${motif(e.place, rnd).split(INK).join(sil)}</g>`;
+    if (f === 'deep') {
+      const k = Math.min(Math.max(n, 3), 8), th = 32 / k;
+      for (let i = 0; i < k; i++) out += `<rect x="0" y="${r1(68 + i * th)}" width="100" height="${r1(th + 0.2)}" fill="${shade(hi, (i % 2 ? 0.8 : 1) - 0.07 * i)}"/><path d="M0,${r1(68 + i * th)}H100" stroke="${CREAM}" stroke-width=".5" opacity=".28"/>`;
+    } else {
+      out += `<rect x="0" y="68" width="100" height="32" fill="${hi}"/><path d="M0,68H100" stroke="${CREAM}" stroke-width=".6" opacity=".4"/>`;
+    }
+    if (f === 'walk') {
+      const P = [[22, 99], [-4, 86], [76, 84], [57, 69.5]];
+      const at = (t) => { const u = 1 - t; return [0, 1].map((k) => u * u * u * P[0][k] + 3 * u * u * t * P[1][k] + 3 * u * t * t * P[2][k] + t * t * t * P[3][k]); };
+      out += `<path d="M${P[0]} C${P[1]} ${P[2]} ${P[3]}" fill="none" stroke="${CREAM}" stroke-width="7" stroke-linecap="round" opacity=".22"/><path d="M${P[0]} C${P[1]} ${P[2]} ${P[3]}" fill="none" stroke="${CREAM}" stroke-width="1.1" stroke-linecap="round" stroke-dasharray="0.1 2.6" opacity=".9"/>`;
+      for (let i = 0; i < n; i++) { const [x, y] = at(0.06 + (0.88 * i) / (n - 1)); out += dot(x, y, i, 0.55 + 0.5 * ((y - 69) / 30)); }
+    } else {
+      const w = n * 5.4 + 5, x0 = 50 - w / 2;
+      out += `<rect x="${r1(x0)}" y="88" width="${r1(w)}" height="8" rx="4" fill="${INK}" opacity=".5"/>`;
+      for (let i = 0; i < n; i++) out += dot(x0 + 4.3 + i * 5.4, 92, i, 0.72);
+    }
+    return `<svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${out}</svg>`;
   }
   function coverEl(e) { const c = mk('span', 'cover', ''); c.innerHTML = coverSvg(e); return c; }
 
