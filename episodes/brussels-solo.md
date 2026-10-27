@@ -1,7 +1,7 @@
 ---
-title: The Story of Brussels
+title: The Story of Brussels (one narrator)
 place: Brussels
-order: 2
+order: 12
 blurb: From a marsh settlement on the Senne to the Grand Place, the Belgian revolution and the capital of Europe.
 ---
 

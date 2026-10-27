@@ -188,3 +188,6 @@ code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: .
 }
 .reader p:has(> .who) { padding-left: 12px; border-left: 3px solid var(--who, var(--accent)); }
 .reader p:has(> .who) .who { margin-left: 0; }
+
+.ghost.small { min-height: 40px; padding: 0 14px; font-size: .9rem; }
+.ghost:disabled { opacity: .6; }

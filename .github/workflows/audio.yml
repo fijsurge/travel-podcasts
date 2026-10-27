@@ -1,0 +1,112 @@
+# Turns episodes/*.md into natural-sounding MP3 audio with the free, open-source Kokoro model.
+# Runs on GitHub's free runners (this repo is public). Only chapters whose text or voices changed are redone.
+name: Generate audio
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'episodes/**'
+      - 'tools/make_audio.py'
+      - 'tools/build.py'
+      - 'tools/pronunciations.json'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Regenerate all audio, even if nothing changed'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: audio
+  cancel-in-progress: false
+
+env:
+  KOKORO_MODEL: models/kokoro-v1.0.int8.onnx
+  KOKORO_VOICES: models/voices-v1.0.bin
+  MODEL_URL: https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      count: ${{ steps.plan.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - id: plan
+        env:
+          FORCE: ${{ inputs.force && '1' || '0' }}
+        run: python tools/make_audio.py plan
+
+  synth:
+    needs: plan
+    if: ${{ needs.plan.outputs.count != '0' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v4
+        id: model
+        with:
+          path: models
+          key: kokoro-v1.0-int8
+      - name: Download voice model (first run only)
+        if: steps.model.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p models
+          curl -fL --retry 4 -o models/kokoro-v1.0.int8.onnx "$MODEL_URL/kokoro-v1.0.int8.onnx"
+          curl -fL --retry 4 -o models/voices-v1.0.bin "$MODEL_URL/voices-v1.0.bin"
+      - run: pip install kokoro-onnx==0.6.1 soundfile numpy
+      - name: Synthesize chapter
+        run: python tools/make_audio.py chapter "${{ matrix.episode }}" "${{ matrix.chapter }}"
+      - name: Pack result
+        run: |
+          nn=$(printf '%02d' "${{ matrix.chapter }}")
+          tar czf chapter.tgz "audio/${{ matrix.episode }}/$nn.mp3" "audio/${{ matrix.episode }}/$nn.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: audio-${{ matrix.episode }}-${{ matrix.chapter }}
+          path: chapter.tgz
+          retention-days: 2
+
+  publish:
+    needs: [plan, synth]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.count != '0' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: audio-*
+          path: incoming
+      - name: Unpack, rebuild library and manifest
+        run: |
+          for f in incoming/*/chapter.tgz; do [ -f "$f" ] && tar xzf "$f"; done
+          python tools/build.py
+          python tools/make_audio.py finalize
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add audio library.json
+          if git diff --cached --quiet; then echo "nothing to commit"; exit 0; fi
+          git commit -m "Update generated audio and library"
+          git pull --rebase origin main
+          git push origin HEAD:main

@@ -17,6 +17,7 @@ Episode format (see README.md):
 The same rules are implemented in the browser (app.js: parseEpisode) so that
 pasted episodes behave identically.
 """
+import hashlib
 import json
 import re
 import sys
@@ -24,6 +25,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 WPM = 150  # words per minute at 1.0x, used only for the duration estimate
+GEN_VERSION = "1"  # bump to force every chapter's audio to be regenerated
+DEFAULT_NARRATOR_VOICE = "bf_emma"
+DEFAULT_VOICES = ["af_heart", "bm_george", "af_sarah", "am_michael"]  # used for speakers in order
 
 
 def clean(text: str) -> str:
@@ -50,6 +54,24 @@ def detect_speakers(meta, chapters):
                 counts[m.group(1)] = counts.get(m.group(1), 0) + 1
     names = [n for n, k in counts.items() if k >= 2]
     return names if len(names) >= 2 else []
+
+
+def parse_voices(meta, speakers):
+    """voices: Anna=af_heart, Ben=bm_george, narrator=bf_emma (all optional)."""
+    voices = {"narrator": DEFAULT_NARRATOR_VOICE}
+    for i, name in enumerate(speakers):
+        voices[name] = DEFAULT_VOICES[i % len(DEFAULT_VOICES)]
+    for part in meta.get("voices", "").split(","):
+        if "=" in part:
+            k, v = part.split("=", 1)
+            voices[k.strip()] = v.strip()
+    return voices
+
+
+def chapter_hash(paragraphs, speakers, voices):
+    """Identifies the exact text and voices a chapter's audio was made from."""
+    blob = json.dumps([paragraphs, speakers, voices, GEN_VERSION], sort_keys=True, ensure_ascii=False)
+    return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:12]
 
 
 def parse_front(raw: str):
@@ -88,6 +110,10 @@ def parse_episode(raw: str, slug: str):
             continue
         chapters.append({"title": re.sub(r"^Chapter\s+\d+:\s*", "", head), "label": head, "paragraphs": paras})
     words = sum(len(p.split()) for c in chapters for p in c["paragraphs"])
+    speakers = detect_speakers(meta, chapters)
+    voices = parse_voices(meta, speakers)
+    for c in chapters:
+        c["hash"] = chapter_hash(c["paragraphs"], speakers, voices)
     title = meta.get("title") or slug.replace("-", " ").title()
     return {
         "id": slug,
@@ -100,7 +126,8 @@ def parse_episode(raw: str, slug: str):
         "notes": notes,
         "chapters": chapters,
         "sources": sources,
-        "speakers": detect_speakers(meta, chapters),
+        "speakers": speakers,
+        "voices": voices,
     }
 
 

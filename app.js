@@ -23,7 +23,7 @@
   };
 
   const settings = Object.assign(
-    { rate: 1, voiceURI: '', wake: true, autonext: true, pron: '', speakerVoices: {} },
+    { rate: 1, voiceURI: '', wake: true, autonext: true, pron: '', speakerVoices: {}, engine: 'auto' },
     store.get('tp.settings', {})
   );
   const saveSettings = () => store.set('tp.settings', settings);
@@ -148,6 +148,10 @@
       const r = await fetch('library.json', { cache: 'no-cache' });
       if (r.ok) shipped = (await r.json()).episodes || [];
     } catch (e) { /* offline and not cached yet: user episodes still work */ }
+    try {
+      const r = await fetch('audio/manifest.json', { cache: 'no-cache' });
+      audioManifest = r.ok ? await r.json() : null;
+    } catch (e) { audioManifest = null; }
     library = shipped.concat(userEps.map((e) => Object.assign({ user: true }, e)));
     library.sort((a, b) => (a.order - b.order) || a.title.localeCompare(b.title));
   }
@@ -167,6 +171,60 @@
     return Math.round(((epWords(ep, pr.ch) + chWords * frac) / total) * 100);
   }
 
+  /* ---------- offline audio (Cache API; the service worker serves it, including seeking) ---------- */
+  const AUDIO_CACHE = 'tp-audio-v1';
+  let offlineKeys = new Set();
+  async function refreshOffline() {
+    try {
+      const c = await caches.open(AUDIO_CACHE);
+      offlineKeys = new Set((await c.keys()).map((r) => new URL(r.url).pathname + new URL(r.url).search));
+    } catch (e) { offlineKeys = new Set(); }
+  }
+  function offlineUrls(e) {
+    const out = [];
+    e.chapters.forEach((_c, n) => { if (hasAudio(e, n)) out.push(audioUrl(e, n, 'mp3'), audioUrl(e, n, 'json')); });
+    return out;
+  }
+  function savedOffline(e) {
+    const urls = offlineUrls(e);
+    if (!urls.length) return false;
+    const have = new Set([...offlineKeys].map((k) => k.replace(/^.*?\/(audio\/)/, '$1')));
+    return urls.every((u) => have.has(u));
+  }
+  async function saveOffline(e, btn) {
+    const urls = offlineUrls(e);
+    const parts = urls.length / 2;
+    try {
+      // make sure the app itself and the audio list are cached too, so it opens with no signal
+      await Promise.all(['audio/manifest.json', 'library.json'].map((u) => fetch(u, { cache: 'reload' }).catch(() => {})));
+      const cache = await caches.open(AUDIO_CACHE);
+      for (let i = 0; i < urls.length; i++) {
+        btn.textContent = `Saving ${Math.floor(i / 2) + 1} of ${parts}\u2026`;
+        btn.disabled = true;
+        const r = await fetch(urls[i]);
+        if (!r.ok) throw new Error('http ' + r.status);
+        await cache.put(urls[i], r);
+      }
+      // drop older versions of this episode's audio
+      const keep = new Set(urls.map((u) => new URL(u, location.href).href));
+      const prefix = new URL('audio/' + encodeURIComponent(e.id) + '/', location.href).href;
+      for (const req of await cache.keys()) if (req.url.startsWith(prefix) && !keep.has(req.url)) await cache.delete(req);
+      showToast('Saved for offline listening.');
+    } catch (err) {
+      showToast('Saving stopped. Check your connection and try again.');
+    }
+    await refreshOffline(); renderLibrary();
+  }
+  async function removeOffline(e) {
+    if (!confirm('Remove the saved audio for "' + e.title + '" from this phone?')) return;
+    try {
+      const cache = await caches.open(AUDIO_CACHE);
+      const prefix = new URL('audio/' + encodeURIComponent(e.id) + '/', location.href).href;
+      for (const req of await cache.keys()) if (req.url.startsWith(prefix)) await cache.delete(req);
+    } catch (err) { /* ignore */ }
+    await refreshOffline(); renderLibrary();
+  }
+
   function renderLibrary() {
     const ul = $('cards');
     ul.textContent = '';
@@ -184,7 +242,9 @@
       li.append(mk('span', 'place', ep.place || (ep.user ? 'Added by you' : 'Episode')));
       li.append(mk('h2', '', ep.title));
       if (ep.blurb) li.append(mk('p', '', ep.blurb));
-      li.append(mk('div', 'meta', `${ep.chapters.length} parts · about ${ep.minutes} min${pct ? ' · ' + (pct >= 100 ? 'finished' : pct + '% heard') : ''}`));
+      const ac = audioCount(ep);
+      const audioNote = ac === ep.chapters.length ? ' · natural voice' : ac ? ` · natural voice for ${ac} of ${ep.chapters.length} parts` : '';
+      li.append(mk('div', 'meta', `${ep.chapters.length} parts · about ${ep.minutes} min${audioNote}${pct ? ' · ' + (pct >= 100 ? 'finished' : pct + '% heard') : ''}`));
       if (pct > 0 && pct < 100) {
         const bar = mk('div', 'progress', ''); const fill = document.createElement('div'); fill.style.width = pct + '%'; bar.append(fill); li.append(bar);
       }
@@ -195,6 +255,13 @@
         location.hash = '#/e/' + encodeURIComponent(ep.id);
       });
       actions.append(go);
+      if (ac && 'caches' in window) {
+        const saved = savedOffline(ep);
+        const off = mk('button', 'ghost small', saved ? 'Saved offline \u2713' : 'Save for offline');
+        if (saved) { off.addEventListener('click', () => removeOffline(ep)); off.title = 'Tap to remove the saved audio'; }
+        else off.addEventListener('click', () => saveOffline(ep, off));
+        actions.append(off);
+      }
       if (ep.user) {
         const del = mk('button', 'del', 'Remove');
         del.addEventListener('click', () => {
@@ -213,6 +280,7 @@
   /* ---------- player state ---------- */
   let ep = null, chIdx = 0, units = [], spans = [], idx = 0;
   let playing = false, token = 0, lastStart = 0, watchdog = null;
+  let audioManifest = null; // audio/manifest.json: which chapters have generated audio
 
   function pronounce(text) {
     const lines = (settings.pron || '').split('\n');
@@ -316,8 +384,9 @@
     set('pause', () => pause());
     set('previoustrack', () => gotoChapter(chIdx - 1, playing));
     set('nexttrack', () => gotoChapter(chIdx + 1, playing));
-    set('seekbackward', () => skip(-3));
-    set('seekforward', () => skip(3));
+    set('seekbackward', () => seekBy(-15));
+    set('seekforward', () => seekBy(15));
+    set('seekto', (d) => { if (mode === 'audio' && d && d.seekTime != null) audioEl.currentTime = d.seekTime; });
     set('stop', () => pause());
   }
 
@@ -335,16 +404,104 @@
     if (document.visibilityState === 'visible' && playing) lockScreen();
   });
 
-  /* ---------- rendering the reader ---------- */
   function showToast(msg) {
     const t = $('toast'); t.textContent = msg; t.hidden = false;
     clearTimeout(showToast.h); showToast.h = setTimeout(() => { t.hidden = true; }, 3500);
   }
 
-  function renderChapter() {
+  /* ---------- natural audio (MP3 files made by tools/make_audio.py) ---------- */
+  const audioEl = new Audio();
+  audioEl.preload = 'auto';
+  let mode = 'speech'; // 'audio' when the open chapter has generated audio, else the phone's voice
+  let loadSeq = 0, lastPos = 0, pendingSeek = null, switching = false;
+  const jsonCache = new Map();
+  const audioFailed = new Set();
+  const audioUrl = (e, n, ext) => `audio/${encodeURIComponent(e.id)}/${String(n).padStart(2, '0')}.${ext}?v=${e.chapters[n].hash}`;
+
+  function hasAudio(e, n) {
+    const a = audioManifest && audioManifest.episodes && audioManifest.episodes[e.id] && audioManifest.episodes[e.id].chapters[String(n)];
+    return a && a.hash === e.chapters[n].hash ? a : null;
+  }
+  const audioEntry = (e, n) => (settings.engine === 'phone' ? null : hasAudio(e, n));
+  const audioCount = (e) => e.chapters.reduce((k, _c, n) => k + (hasAudio(e, n) ? 1 : 0), 0);
+
+  async function fetchChapterJson(e, n) {
+    const url = audioUrl(e, n, 'json');
+    let j = jsonCache.get(url);
+    if (!j) {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error('missing');
+      j = await r.json();
+      jsonCache.set(url, j);
+    }
+    if (j.hash !== e.chapters[n].hash) throw new Error('stale');
+    return j;
+  }
+
+  async function loadUnits(e, n) {
+    if (audioEntry(e, n) && !audioFailed.has(e.id + ':' + n)) {
+      try { return { units: (await fetchChapterJson(e, n)).units, audio: true }; } catch (err) { /* fall back to the phone voice */ }
+    }
+    return { units: buildUnits(e.chapters[n], e.speakers).units, audio: false };
+  }
+
+  function seekToUnit(i) {
+    const t = units[i] && units[i].t != null ? units[i].t : 0;
+    if (audioEl.readyState >= 1) { pendingSeek = null; audioEl.currentTime = t; } else pendingSeek = t;
+  }
+  function seekBy(sec) {
+    if (mode === 'audio') {
+      const d = audioEl.duration || Infinity;
+      audioEl.currentTime = Math.min(Math.max(0, audioEl.currentTime + sec), d);
+    } else skip(sec > 0 ? 3 : -3);
+  }
+  function setPosition() {
+    if (mode !== 'audio' || !('mediaSession' in navigator) || !navigator.mediaSession.setPositionState) return;
+    const d = audioEl.duration;
+    if (!d || !isFinite(d)) return;
+    try { navigator.mediaSession.setPositionState({ duration: d, playbackRate: audioEl.playbackRate || 1, position: Math.min(audioEl.currentTime, d) }); } catch (e) { /* optional */ }
+  }
+  function prefetchNext() {
+    if (ep && chIdx + 1 < ep.chapters.length && audioEntry(ep, chIdx + 1)) fetchChapterJson(ep, chIdx + 1).catch(() => {});
+  }
+
+  audioEl.addEventListener('loadedmetadata', () => {
+    if (pendingSeek !== null) { audioEl.currentTime = pendingSeek; pendingSeek = null; }
+    setPosition();
+  });
+  audioEl.addEventListener('timeupdate', () => {
+    if (mode !== 'audio' || !units.length || pendingSeek !== null) return;
+    const t = audioEl.currentTime;
+    let lo = 0, hi = units.length - 1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (units[mid].t <= t + 0.05) lo = mid; else hi = mid - 1; }
+    if (lo !== idx) { idx = lo; mark(lo, !audioEl.paused); remember(false); }
+    const d = audioEl.duration;
+    if (d) {
+      $('bar-fill').style.width = Math.round((t / d) * 100) + '%';
+      if (t > d * 0.8) prefetchNext();
+    }
+    if (Date.now() - lastPos > 1000) { lastPos = Date.now(); setPosition(); }
+  });
+  audioEl.addEventListener('ended', () => { if (mode === 'audio' && !switching) chapterDone(); });
+  audioEl.addEventListener('pause', () => {
+    // paused from outside (phone call, headset button, another app took audio focus)
+    if (mode === 'audio' && playing && !switching && !audioEl.ended) { playing = false; setPlayingUi(); unlockScreen(); remember(false); }
+  });
+  audioEl.addEventListener('play', () => {
+    if (mode === 'audio' && !playing && !switching) { playing = true; setPlayingUi(); lockScreen(); }
+  });
+  audioEl.addEventListener('error', () => {
+    if (mode !== 'audio' || !ep || !audioEl.getAttribute('src')) return;
+    audioFailed.add(ep.id + ':' + chIdx);
+    showToast('That audio could not load, so this part uses your phone voice.');
+    gotoChapter(chIdx, playing, idx);
+  });
+
+  /* ---------- rendering the reader ---------- */
+  function renderChapter(data) {
     const ch = ep.chapters[chIdx];
-    const built = buildUnits(ch, ep.speakers);
-    units = built.units;
+    units = data.units;
+    mode = data.audio ? 'audio' : 'speech';
     const reader = $('reader');
     reader.textContent = '';
     const h = document.createElement('h2'); h.textContent = ch.label; reader.append(h);
@@ -365,8 +522,15 @@
       p.append(s, document.createTextNode(' '));
       spans.push(s);
     });
+    if (mode === 'audio') {
+      const src = new URL(audioUrl(ep, chIdx, 'mp3'), location.href).href;
+      if (audioEl.src !== src) audioEl.src = src;
+      audioEl.playbackRate = settings.rate;
+    } else if (audioEl.getAttribute('src')) {
+      audioEl.removeAttribute('src'); audioEl.load();
+    }
     $('ch-label').textContent = ch.label;
-    $('ch-meta').textContent = `${chIdx + 1} of ${ep.chapters.length}`;
+    $('ch-meta').textContent = `${chIdx + 1} of ${ep.chapters.length} · ${mode === 'audio' ? 'natural voice' : 'phone voice'}`;
     const src = $('sources');
     if (chIdx === ep.chapters.length - 1 && ep.sources.length) {
       src.textContent = '';
@@ -386,7 +550,7 @@
       s.classList.toggle('active', j === i);
       s.classList.toggle('done', j < i);
     });
-    $('bar-fill').style.width = (units.length ? Math.round((i / units.length) * 100) : 0) + '%';
+    if (!(mode === 'audio' && audioEl.duration)) $('bar-fill').style.width = (units.length ? Math.round((i / units.length) * 100) : 0) + '%';
     if (scroll && spans[i]) {
       const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       spans[i].scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' });
@@ -406,7 +570,7 @@
     if ('mediaSession' in navigator) { try { navigator.mediaSession.playbackState = playing ? 'playing' : 'paused'; } catch (e) { /* optional */ } }
   }
 
-  /* ---------- speech engine ---------- */
+  /* ---------- phone-voice engine (speech synthesis) ---------- */
   function speakUnit(i, my) {
     if (my !== token || !playing) return;
     if (i >= units.length) { chapterDone(); return; }
@@ -443,38 +607,73 @@
     setTimeout(() => speakUnit(i, my), 60);
   }
 
-  function play() { if (ep) start(Math.min(idx, Math.max(0, units.length - 1))); }
-  function pause() {
-    playing = false; token++; clearInterval(watchdog);
+  /* ---------- transport: works for both engines ---------- */
+  function stopAll() {
+    token++; clearInterval(watchdog);
     if (synth) synth.cancel();
-    setPlayingUi(); stopKeepAlive(); unlockScreen(); remember(false);
+    switching = true;
+    try { audioEl.pause(); } catch (e) { /* optional */ }
+    stopKeepAlive();
+  }
+
+  function play() {
+    if (!ep) return;
+    if (mode === 'audio') {
+      playing = true; setPlayingUi(); stopKeepAlive(); lockScreen(); updateMedia();
+      switching = false;
+      audioEl.playbackRate = settings.rate;
+      const p = audioEl.play();
+      if (p && p.catch) p.catch((e) => {
+        if (e && e.name === 'AbortError') return;
+        playing = false; setPlayingUi(); unlockScreen();
+        showToast('Tap play to start.');
+      });
+      return;
+    }
+    start(Math.min(idx, Math.max(0, units.length - 1)));
+  }
+
+  function pause() {
+    playing = false;
+    stopAll(); switching = false;
+    setPlayingUi(); unlockScreen(); remember(false);
   }
   function toggle() { playing ? pause() : play(); }
 
   function skip(n) {
     const i = Math.min(Math.max(0, idx + n), Math.max(0, units.length - 1));
     idx = i; mark(i, true); remember(false);
-    if (playing) start(i);
+    if (mode === 'audio') seekToUnit(i); else if (playing) start(i);
   }
 
-  function gotoChapter(n, keepPlaying, at) {
-    if (n < 0) n = 0;
-    if (n >= ep.chapters.length) { return; }
-    const wasPlaying = keepPlaying;
-    if (playing) { token++; if (synth) synth.cancel(); }
+  function jumpTo(i) {
+    idx = i; mark(i, false);
+    if (mode === 'audio') { seekToUnit(i); if (!playing) play(); } else start(i);
+  }
+
+  async function gotoChapter(n, keepPlaying, at) {
+    if (!ep || n < 0 || n >= ep.chapters.length) return;
+    const seq = ++loadSeq;
+    stopAll();
     chIdx = n; idx = at || 0;
-    renderChapter(); mark(idx, false);
+    const data = await loadUnits(ep, n);
+    if (seq !== loadSeq) return;
+    renderChapter(data);
+    idx = Math.min(idx, Math.max(0, units.length - 1));
+    if (mode === 'audio') seekToUnit(idx);
+    mark(idx, false);
     window.scrollTo({ top: 0 });
     remember(false);
-    if (wasPlaying) start(idx); else { playing = false; setPlayingUi(); }
+    switching = false;
+    if (keepPlaying) play(); else { playing = false; setPlayingUi(); }
   }
 
-  function chapterDone() {
-    if (settings.autonext && chIdx + 1 < ep.chapters.length) { gotoChapter(chIdx + 1, true); return; }
+  async function chapterDone() {
+    if (settings.autonext && chIdx + 1 < ep.chapters.length) { await gotoChapter(chIdx + 1, true); return; }
     const last = chIdx + 1 >= ep.chapters.length;
-    playing = false; token++; clearInterval(watchdog); setPlayingUi(); stopKeepAlive(); unlockScreen();
+    playing = false; stopAll(); switching = false; setPlayingUi(); unlockScreen();
     if (last) { remember(true); showToast('Episode finished.'); }
-    else { chIdx += 1; idx = 0; renderChapter(); mark(0, false); remember(false); }
+    else await gotoChapter(chIdx + 1, false);
   }
 
   /* ---------- views and routing ---------- */
@@ -485,9 +684,10 @@
     $('back').hidden = true; $('title').textContent = 'Travel Podcasts';
     document.title = 'Travel Podcasts';
     renderLibrary();
+    if ('caches' in window) refreshOffline().then(() => { if (!ep) renderLibrary(); });
   }
 
-  function showEpisode(id) {
+  async function showEpisode(id) {
     const found = library.find((e) => e.id === id);
     if (!found) { location.hash = ''; return; }
     if (ep && ep.id === id) return;
@@ -495,14 +695,11 @@
     ep = found;
     const pr = progress[ep.id];
     const ch = pr && !pr.done && ep.chapters[pr.ch] ? pr.ch : 0;
-    chIdx = ch; idx = pr && !pr.done ? pr.u || 0 : 0;
+    const at = pr && !pr.done ? pr.u || 0 : 0;
     $('view-library').hidden = true; $('view-player').hidden = false; $('transport').hidden = false;
-    $('back').hidden = false; $('title').textContent = ep.title; document.title = ep.title + ' · Travel Podcasts';
-    renderChapter();
-    idx = Math.min(idx, Math.max(0, units.length - 1));
-    mark(idx, false);
+    $('back').hidden = false; $('title').textContent = ep.title; document.title = ep.title + ' \u00b7 Travel Podcasts';
+    await gotoChapter(ch, false, at);
     if (idx > 0) setTimeout(() => mark(idx, true), 50);
-    setPlayingUi();
   }
 
   function route() {
@@ -520,7 +717,8 @@
       b.addEventListener('click', () => {
         settings.rate = r; saveSettings();
         box.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
-        if (playing) start(idx);
+        // natural audio changes pace instantly; phone voices apply it from the next sentence
+        if (mode === 'audio') audioEl.playbackRate = r;
       });
       box.append(b);
     });
@@ -557,7 +755,7 @@
       });
       const cur = voiceFor(name); if (cur) sel.value = cur.voiceURI;
       sel.addEventListener('change', () => {
-        settings.speakerVoices[name] = sel.value; saveSettings(); if (playing) start(idx);
+        settings.speakerVoices[name] = sel.value; saveSettings();
       });
       label.append(sel); box.append(label);
     });
@@ -578,7 +776,7 @@
     $('reader').addEventListener('click', (e) => {
       const s = e.target.closest('.s'); if (!s) return;
       const i = parseInt(s.dataset.i, 10);
-      idx = i; mark(i, false); start(i);
+      jumpTo(i);
     });
     document.addEventListener('keydown', (e) => {
       if (!ep || e.target.closest('input,textarea,select,dialog')) return;
@@ -589,10 +787,15 @@
 
     // settings
     $('settings-btn').addEventListener('click', () => {
+      $('engine').value = settings.engine || 'auto';
       $('wake').checked = !!settings.wake; $('autonext').checked = !!settings.autonext; $('pron').value = settings.pron || '';
       loadVoices(); renderSpeakerVoices(); $('dlg-settings').showModal();
     });
-    $('voice').addEventListener('change', (e) => { settings.voiceURI = e.target.value; saveSettings(); if (playing) start(idx); });
+    $('engine').addEventListener('change', (e) => {
+      settings.engine = e.target.value; saveSettings();
+      if (ep) gotoChapter(chIdx, false, idx); // reload this part with the chosen voice source
+    });
+    $('voice').addEventListener('change', (e) => { settings.voiceURI = e.target.value; saveSettings(); });
     $('wake').addEventListener('change', (e) => { settings.wake = e.target.checked; saveSettings(); if (!settings.wake) unlockScreen(); else if (playing) lockScreen(); });
     $('autonext').addEventListener('change', (e) => { settings.autonext = e.target.checked; saveSettings(); });
     $('pron').addEventListener('input', (e) => { settings.pron = e.target.value; saveSettings(); });
