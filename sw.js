@@ -1,8 +1,10 @@
 /* Offline support: files are fetched fresh when online and served from cache when offline. */
-const CACHE = 'travel-podcasts-v3';
+const CACHE = 'travel-podcasts-v4';
 const AUDIO_CACHE = 'tp-audio-v1'; // filled by the page ("Save for offline"); never deleted here
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'library.json',
-  'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png'];
+  'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png',
+  'fonts/young-serif-latin-400-normal.woff2', 'fonts/young-serif-latin-ext-400-normal.woff2',
+  'fonts/atkinson-hyperlegible-next-latin-wght-normal.woff2', 'fonts/atkinson-hyperlegible-next-latin-ext-wght-normal.woff2'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

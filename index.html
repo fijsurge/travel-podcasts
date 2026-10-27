@@ -5,13 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Travel Podcasts</title>
 <meta name="description" content="Narrated history episodes, read aloud by your phone's own voices.">
-<meta name="theme-color" content="#1d3a5f" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0f1720" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#e8edef" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0a161d" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
+<link rel="preload" href="fonts/young-serif-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/atkinson-hyperlegible-next-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -26,14 +28,69 @@
 </header>
 
 <main id="main">
-  <!-- Library -->
-  <section id="view-library" class="view">
-    <p class="lede" id="lede">Episodes are read aloud by natural voices (or your phone's own). Pick one and press play.</p>
+  <div id="as-wrap">
     <div class="audio-status" id="audio-status" hidden>
       <div class="as-top"><span class="dot"></span><div class="as-text"><strong id="as-title"></strong><span id="as-sub"></span></div>
         <button class="ghost small" id="as-details" type="button">Details</button></div>
       <div class="as-bar" id="as-bar"><div id="as-fill"></div></div>
     </div>
+  </div>
+
+  <!-- Home -->
+  <section id="view-home" class="view">
+    <div class="chips" id="home-places" hidden></div>
+    <div id="home-shelves"></div>
+  </section>
+
+  <!-- Search -->
+  <section id="view-search" class="view" hidden>
+    <label class="search-box"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+      <input id="search-input" type="search" placeholder="Search every chapter" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
+    </label>
+    <div id="search-results" class="results"></div>
+  </section>
+
+  <!-- Create -->
+  <section id="view-create" class="view" hidden>
+    <h2 class="view-h">Ask for a new episode</h2>
+    <p class="lede">Fill in what you know. The app builds a request for Claude, who writes the script. The audio then appears in your library, usually within 30 to 40 minutes.</p>
+    <form id="create-form" class="stack" autocomplete="off">
+      <label class="field">What kind of episode?
+        <select id="cr-kind">
+          <option value="overview">Overview (10 to 15 min)</option>
+          <option value="walk">Walking tour (30 to 45 min)</option>
+          <option value="deep">Deep dive (an hour or more)</option>
+        </select>
+      </label>
+      <label class="field">Place
+        <input id="cr-place" type="text" placeholder="Bruges">
+      </label>
+      <label class="field" id="cr-stops-wrap">Stops, in order (one per line)
+        <textarea id="cr-stops" rows="5" placeholder="Markt square&#10;Belfry&#10;Burg square"></textarea>
+      </label>
+      <label class="field">Time you have
+        <input id="cr-time" type="text" placeholder="Two hours, leaving the hotel at 10">
+      </label>
+      <label class="field">What you care about
+        <input id="cr-interests" type="text" placeholder="History, architecture, a good coffee stop">
+      </label>
+      <label class="field">Style
+        <select id="cr-style">
+          <option value="two hosts, lively and conversational">Two hosts, lively</option>
+          <option value="one narrator">One narrator</option>
+        </select>
+      </label>
+      <label class="field">Anything practical
+        <textarea id="cr-notes" rows="3" placeholder="Hills, weather plan, listening on a shared speaker"></textarea>
+      </label>
+      <button class="primary wide" id="cr-copy" type="button">Copy request for Claude</button>
+    </form>
+    <textarea id="cr-out" rows="9" readonly hidden aria-label="Your request"></textarea>
+    <p class="fine" id="cr-hint">Paste it into your chat with Claude. Sending requests straight from the app is the next step.</p>
+  </section>
+
+  <!-- Library -->
+  <section id="view-library" class="view">
     <div class="tabs" id="tabs" role="group" aria-label="Library">
       <button type="button" data-tab="episodes">Episodes</button>
       <button type="button" data-tab="playlists">Playlists</button>
@@ -63,14 +120,23 @@
 
   <!-- Player -->
   <section id="view-player" class="view" hidden>
+    <div class="hero">
+      <div class="hero-cover" id="hero-cover"></div>
+      <div class="hero-text">
+        <h2 id="hero-title"></h2>
+        <p id="hero-sub"></p>
+      </div>
+    </div>
     <div class="ch-head">
       <button class="chip" id="chapters-btn" aria-haspopup="dialog">
         <span id="ch-label">Chapter</span>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
       </button>
-      <span class="ch-meta" id="ch-meta"></span>
+      <button class="chip small" id="ver-btn" aria-haspopup="dialog" hidden><span id="ver-label">Version</span></button>
+      <button class="chip small" id="sleep-btn" aria-haspopup="dialog"><span id="sleep-label">Sleep</span></button>
     </div>
-    <div class="bar"><div class="bar-fill" id="bar-fill"></div></div>
+    <div class="ch-meta" id="ch-meta"></div>
+    <div class="bar" hidden><div class="bar-fill" id="bar-fill"></div></div>
     <article id="reader" class="reader" aria-live="off"></article>
     <aside id="sources" class="sources" hidden></aside>
   </section>
@@ -94,6 +160,11 @@
 
 <!-- Transport (player only) -->
 <footer class="transport" id="transport" hidden>
+  <div class="row scrub" id="scrub">
+    <span id="t-cur">0:00</span>
+    <input id="scrubber" type="range" min="0" max="1000" value="0" aria-label="Position in this chapter">
+    <span id="t-left">0:00</span>
+  </div>
   <div class="row speeds" id="speeds" role="group" aria-label="Speed"></div>
   <div class="row buttons">
     <button class="t-btn" id="prev-ch" aria-label="Previous chapter">
@@ -114,6 +185,33 @@
     </button>
   </div>
 </footer>
+
+<!-- Tab bar -->
+<nav class="tabbar" id="tabbar" aria-label="Main">
+  <a href="#/" data-tab="home"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/></svg></span><span>Home</span></a>
+  <a href="#/search" data-tab="search"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg></span><span>Search</span></a>
+  <a href="#/library" data-tab="library"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4v16M10 4v16M15 5l4 15"/></svg></span><span>Library</span></a>
+  <a href="#/create" data-tab="create"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span><span>Create</span></a>
+</nav>
+
+<!-- Sleep timer -->
+<dialog id="dlg-sleep">
+  <form method="dialog" class="sheet">
+    <h2>Sleep timer</h2>
+    <div id="sleep-opts"></div>
+    <button class="primary wide" value="close">Close</button>
+  </form>
+</dialog>
+
+<!-- Versions -->
+<dialog id="dlg-ver">
+  <form method="dialog" class="sheet">
+    <h2>Choose a version</h2>
+    <div id="ver-opts"></div>
+    <p class="fine">Switching keeps you on the same chapter.</p>
+    <button class="primary wide" value="close">Close</button>
+  </form>
+</dialog>
 
 <!-- Episode options -->
 <dialog id="dlg-ep">

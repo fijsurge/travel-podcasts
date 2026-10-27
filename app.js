@@ -82,6 +82,7 @@
       title, place: meta.place || '', blurb: meta.blurb || '',
       order: parseFloat(meta.order || '999'), words, minutes: Math.max(1, Math.round(words / WPM)),
       notes, chapters, sources, speakers: detectSpeakers(meta, chapters),
+      format: meta.format || 'deep', series: meta.series || '',
     };
   }
 
@@ -155,6 +156,7 @@
     } catch (e) { audioManifest = null; }
     library = shipped.concat(userEps.map((e) => Object.assign({ user: true }, e)));
     library.sort((a, b) => (a.order - b.order) || a.title.localeCompare(b.title));
+    searchIdx = null;
   }
 
   const epWords = (ep, upToChapter) =>
@@ -315,7 +317,7 @@
     const sig = audioSignature();
     if (sig !== audioStatus.sig) {
       audioStatus.sig = sig;
-      if (view === 'library') renderLibrary();
+      renderLibrary();
       if (ep && !ep.user && !hasAudio(ep, chIdx)) { const meta = $('ch-meta'); if (meta) meta.textContent = `${chIdx + 1} of ${ep.chapters.length} · audio ${STATE_TEXT[chapterState(ep, chIdx)]}`; }
     }
   }
@@ -380,7 +382,7 @@
       if (f) { ep = f; if (ep.chapters[chIdx] && ep.chapters[chIdx].hash !== before) await gotoChapter(chIdx, false, idx); }
     }
     audioStatus.sig = '';
-    renderAudioStatus(); if (view === 'library') renderLibrary();
+    renderAudioStatus(); renderLibrary();
     return true;
   }
 
@@ -415,19 +417,167 @@
   const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
   const plMinutes = (p) => p.items.reduce((n, id) => n + (epById(id) ? epById(id).minutes : 0), 0);
 
+  /* ---------- formats, versions and covers ---------- */
+  const FORMATS = {
+    overview: { label: 'Overview', shelf: 'Overviews', sub: 'To prepare for the day' },
+    walk: { label: 'Walking tour', shelf: 'Walking tours', sub: 'Listen as you go' },
+    deep: { label: 'Deep dive', shelf: 'Deep dives', sub: 'Settle in and learn' },
+  };
+  const fmtOf = (e) => (FORMATS[e.format] ? e.format : 'deep');
+  const variantOf = (e) => (e.speakers && e.speakers.length > 1 ? 'Conversation' : 'Narrated');
+  const famKey = (e) => [e.series || e.place || e.id, fmtOf(e), e.chapters.length].join('|');
+  // The same topic told two ways (conversation and narrated), with the same chapters: one can be swapped for the other.
+  function family(e) {
+    if (e.user) return [e];
+    const g = library.filter((x) => !x.user && !hidden.includes(x.id) && famKey(x) === famKey(e));
+    const labels = g.map(variantOf);
+    if (g.length < 2 || !g.includes(e) || new Set(labels).size !== labels.length) return [e];
+    return g.slice().sort((a, b) => (variantOf(a) === 'Conversation' ? 0 : 1) - (variantOf(b) === 'Conversation' ? 0 : 1));
+  }
+  const isPrimary = (e) => family(e)[0] === e;
+
+  function hashStr(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+  function rng(seed) {
+    return () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  }
+  const COVERS = [['#12404f', '#1d6177'], ['#4a2234', '#74344d'], ['#26402f', '#3f6a4e'], ['#2b2f5e', '#474d92'], ['#5a3418', '#8a5428'], ['#233a56', '#385f8c']];
+  const CREAM = '#f2ead2', SIGNAL = '#f0b93b';
+  // A route with one stop per chapter. Heard stops are filled, the stop you are on is ringed, the rest are empty.
+  function coverSvg(e) {
+    const rnd = rng(hashStr(e.id));
+    const [bg, hi] = COVERS[hashStr(e.place || e.series || e.id) % COVERS.length];
+    const f = fmtOf(e);
+    const n = Math.min(Math.max(e.chapters.length, 2), 14);
+    const pr = progress[e.id];
+    const heard = pr ? (pr.done ? n : Math.min(pr.ch, n)) : 0;
+    const cur = pr && !pr.done ? Math.min(pr.ch, n - 1) : -1;
+    const pts = [];
+    let y = 34 + rnd() * 30;
+    for (let i = 0; i < n; i++) { y += (rnd() - 0.5) * 34; y = Math.max(f === 'overview' ? 44 : 24, Math.min(80, y)); pts.push([12 + (76 * i) / (n - 1), y]); }
+    const r1 = (v) => Math.round(v * 10) / 10;
+    let d = `M${r1(pts[0][0])},${r1(pts[0][1])}`;
+    for (let i = 0; i < n - 1; i++) {
+      const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+      d += ` C${r1(p1[0] + (p2[0] - p0[0]) / 6)},${r1(p1[1] + (p2[1] - p0[1]) / 6)} ${r1(p2[0] - (p3[0] - p1[0]) / 6)},${r1(p2[1] - (p3[1] - p1[1]) / 6)} ${r1(p2[0])},${r1(p2[1])}`;
+    }
+    let art = '';
+    if (f === 'overview') {
+      const cx = 30 + rnd() * 40;
+      art += `<path d="M${r1(cx - 17)},64 A17 17 0 0 1 ${r1(cx + 17)},64Z" fill="${SIGNAL}"/><rect x="0" y="64" width="100" height="36" fill="${hi}" opacity=".55"/><path d="M0,64H100" stroke="${CREAM}" stroke-width=".8" opacity=".5"/>`;
+    } else if (f === 'deep') {
+      const cx = 25 + rnd() * 50, cy = 25 + rnd() * 50, rot = Math.round(rnd() * 60 - 30);
+      for (let k = 1; k <= 6; k++) art += `<ellipse cx="${r1(cx)}" cy="${r1(cy)}" rx="${k * 9}" ry="${r1(k * 7)}" transform="rotate(${rot} ${r1(cx)} ${r1(cy)})" fill="none" stroke="${CREAM}" stroke-width=".7" opacity="${r1(0.32 - k * 0.04)}"/>`;
+    } else {
+      art += `<path d="M-5,${r1(86 - rnd() * 8)} Q30,${r1(60 + rnd() * 10)} 55,${r1(76 + rnd() * 6)} T105,${r1(66 + rnd() * 10)}" fill="none" stroke="${hi}" stroke-width="9" stroke-linecap="round" opacity=".5"/>`;
+    }
+    const line = `<path d="${d}" fill="none" stroke="${CREAM}" stroke-width="${f === 'walk' ? 1.7 : 1.9}" stroke-linecap="round"${f === 'walk' ? ' stroke-dasharray="0.1 3.6"' : ''}/>`;
+    let dots = '';
+    pts.forEach((p, i) => {
+      const x = r1(p[0]), yy = r1(p[1]);
+      if (i < heard) dots += `<circle cx="${x}" cy="${yy}" r="3.2" fill="${SIGNAL}"/>`;
+      else if (i === cur) dots += `<circle cx="${x}" cy="${yy}" r="3.9" fill="${bg}" stroke="${SIGNAL}" stroke-width="1.8"/>`;
+      else dots += `<circle cx="${x}" cy="${yy}" r="2.8" fill="${bg}" stroke="${CREAM}" stroke-width="1.2"/>`;
+    });
+    return `<svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="100" height="100" fill="${bg}"/>${art}${line}${dots}</svg>`;
+  }
+  function coverEl(e) { const c = mk('span', 'cover', ''); c.innerHTML = coverSvg(e); return c; }
+
+  function audioBadge(e) {
+    if (e.user) return null;
+    const total = e.chapters.length, ac = audioCount(e);
+    if (ac >= total) return null;
+    const sm = episodeAudioSummary(e);
+    const text = { making: `Making ${ac}/${total}`, waiting: 'In line', failed: 'Problem', idle: 'Not started', unknown: 'Audio coming' }[sm.kind] || 'Audio coming';
+    const b = mk('span', 'badge ' + sm.kind, '');
+    b.append(mk('span', 'dot', ''), document.createTextNode(text));
+    return b;
+  }
+
+  /* ---------- lists: Home, Library ---------- */
+  function renderPlaceChips(box, places, again) {
+    box.textContent = '';
+    box.hidden = places.length < 2;
+    if (placeFilter && !places.includes(placeFilter)) placeFilter = '';
+    ['', ...places].forEach((pl) => {
+      const b = mk('button', 'chip-btn', pl || 'All');
+      b.type = 'button';
+      b.setAttribute('aria-pressed', String(placeFilter === pl));
+      b.addEventListener('click', () => { placeFilter = pl; renderLibrary(); });
+      box.append(b);
+    });
+  }
+
+  function buildTile(e) {
+    const li = mk('li', 'tile');
+    const b = mk('button', '', '');
+    b.type = 'button';
+    const wrap = mk('span', 'cover-wrap', '');
+    wrap.append(coverEl(e));
+    const badge = audioBadge(e); if (badge) wrap.append(badge);
+    const fam = family(e);
+    b.append(wrap, mk('span', 't-title', e.title), mk('span', 't-meta', `${e.minutes} min · ${variantOf(e)}${fam.length > 1 ? ' · 2 versions' : ''}`));
+    b.addEventListener('click', () => { location.hash = '#/e/' + encodeURIComponent(e.id); });
+    li.append(b);
+    return li;
+  }
+
+  function renderHome() {
+    const visible = library.filter((x) => !hidden.includes(x.id));
+    renderPlaceChips($('home-places'), [...new Set(visible.map((x) => x.place).filter(Boolean))]);
+    const box = $('home-shelves');
+    box.textContent = '';
+    const shown = visible.filter((x) => !placeFilter || x.place === placeFilter);
+    if (!shown.length) {
+      const em = mk('div', 'empty', '');
+      em.append(mk('h2', '', library.length ? 'Nothing here yet' : 'No episodes yet'), mk('p', '', 'Ask for one in the Create tab, or add a script you already have in Library.'));
+      box.append(em);
+      return;
+    }
+    const shelf = (title, sub) => { const s = mk('section', 'shelf', ''); s.append(mk('h2', '', title)); if (sub) s.append(mk('p', 'sub', sub)); box.append(s); return s; };
+    const cont = shown.filter((x) => { const p = percent(x); return p > 0 && p < 100; })
+      .sort((a, b) => ((progress[b.id] || {}).t || 0) - ((progress[a.id] || {}).t || 0)).slice(0, 3);
+    if (cont.length) {
+      const s = shelf('Pick up where you left off');
+      const list = mk('div', 'cont', '');
+      cont.forEach((x) => {
+        const pr = progress[x.id];
+        const c = mk('button', 'cont-card', ''); c.type = 'button';
+        const t = mk('span', '', '');
+        const ch = x.chapters[pr.ch];
+        t.append(mk('span', 'c-title', x.title), mk('div', 'c-sub', `${ch ? ch.label : ''} · ${percent(x)}% heard`));
+        const bar = mk('div', 'progress', ''); const fill = document.createElement('div'); fill.style.width = percent(x) + '%'; bar.append(fill); t.append(bar);
+        c.append(coverEl(x), t);
+        c.addEventListener('click', () => { location.hash = '#/e/' + encodeURIComponent(x.id); });
+        list.append(c);
+      });
+      s.append(list);
+    }
+    ['overview', 'walk', 'deep'].forEach((f) => {
+      const items = shown.filter((x) => fmtOf(x) === f && isPrimary(x));
+      if (!items.length) return;
+      const s = shelf(FORMATS[f].shelf, FORMATS[f].sub);
+      const ul = mk('ul', 'tiles', '');
+      items.forEach((x) => ul.append(buildTile(x)));
+      s.append(ul);
+    });
+  }
+
   function buildCard(e, removed) {
     const li = mk('li', 'card' + (removed ? ' removed' : ''));
+    const body = mk('div', 'card-body');
+    li.append(coverEl(e), body);
     const pct = percent(e);
     const nowPlaying = !removed && ep && ep.id === e.id;
-    li.append(mk('span', 'place', removed ? 'Removed' : (e.place || (e.user ? 'Added by you' : 'Episode')) + (nowPlaying ? ' \u00b7 now ' + (playing ? 'playing' : 'open') : '')));
-    li.append(mk('h2', '', e.title));
-    if (e.blurb) li.append(mk('p', '', e.blurb));
+    const where = [e.place || (e.user ? 'Added by you' : 'Episode'), FORMATS[fmtOf(e)].label, variantOf(e)].join(' · ');
+    body.append(mk('span', 'place', removed ? 'Removed' : where + (nowPlaying ? ' · now ' + (playing ? 'playing' : 'open') : '')));
+    body.append(mk('h2', '', e.title));
+    if (e.blurb) body.append(mk('p', '', e.blurb));
     const ac = audioCount(e);
     const audioNote = ac === e.chapters.length ? ' · natural voice' : ac ? ` · natural voice for ${ac} of ${e.chapters.length} parts` : '';
-    li.append(mk('div', 'meta', `${e.chapters.length} parts · about ${e.minutes} min${audioNote}${pct ? ' · ' + (pct >= 100 ? 'finished' : pct + '% heard') : ''}`));
-    if (!removed && !e.user && ac < e.chapters.length) li.append(statusPill(e));
+    body.append(mk('div', 'meta', `${e.chapters.length} parts · about ${e.minutes} min${audioNote}${pct ? ' · ' + (pct >= 100 ? 'finished' : pct + '% heard') : ''}`));
+    if (!removed && !e.user && ac < e.chapters.length) body.append(statusPill(e));
     if (!removed && pct > 0 && pct < 100) {
-      const bar = mk('div', 'progress', ''); const fill = document.createElement('div'); fill.style.width = pct + '%'; bar.append(fill); li.append(bar);
+      const bar = mk('div', 'progress', ''); const fill = document.createElement('div'); fill.style.width = pct + '%'; bar.append(fill); body.append(bar);
     }
     const actions = mk('div', 'actions', '');
     if (removed) {
@@ -460,18 +610,7 @@
 
   function renderEpisodes() {
     const visible = library.filter((e) => !hidden.includes(e.id));
-    const places = [...new Set(visible.map((e) => e.place).filter(Boolean))];
-    if (placeFilter && !places.includes(placeFilter)) placeFilter = '';
-    const chips = $('place-chips');
-    chips.textContent = '';
-    chips.hidden = places.length < 2;
-    ['', ...places].forEach((pl) => {
-      const b = mk('button', 'chip-btn', pl || 'All');
-      b.type = 'button';
-      b.setAttribute('aria-pressed', String(placeFilter === pl));
-      b.addEventListener('click', () => { placeFilter = pl; renderLibrary(); });
-      chips.append(b);
-    });
+    renderPlaceChips($('place-chips'), [...new Set(visible.map((e) => e.place).filter(Boolean))]);
     const ul = $('cards');
     ul.textContent = '';
     const shown = visible.filter((e) => !placeFilter || e.place === placeFilter);
@@ -490,24 +629,128 @@
     if (!playlists.length) ul.append(mk('li', 'fine', 'No playlists yet. Make one for a trip, a commute or a topic, then add episodes with the ⋯ button on any episode.'));
     playlists.forEach((p) => {
       const li = mk('li', 'card');
-      li.append(mk('h2', '', p.name));
+      const first = p.items.map(epById).find(Boolean);
+      li.append(first ? coverEl(first) : mk('span', 'cover', ''));
+      const body = mk('div', 'card-body');
+      body.append(mk('h2', '', p.name));
       const n = p.items.filter(epById).length;
-      li.append(mk('div', 'meta', `${n} episode${n === 1 ? '' : 's'} · about ${plMinutes(p)} min`));
+      body.append(mk('div', 'meta', `${n} episode${n === 1 ? '' : 's'} · about ${plMinutes(p)} min`));
       const actions = mk('div', 'actions', '');
       const open = mk('button', 'primary', 'Open');
       open.addEventListener('click', () => { location.hash = '#/p/' + encodeURIComponent(p.id); });
       actions.append(open);
-      li.append(actions);
+      body.append(actions);
+      li.append(body);
       ul.append(li);
     });
   }
 
+  // Redraws every list that is on screen or cheap to keep current.
   function renderLibrary() {
     document.querySelectorAll('#tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tab === tab)));
     $('pane-episodes').hidden = tab !== 'episodes';
     $('pane-playlists').hidden = tab !== 'playlists';
+    if (view === 'home') renderHome();
     if (tab === 'episodes') renderEpisodes(); else renderPlaylists();
+    if (view === 'search') runSearch($('search-input').value);
   }
+
+  /* ---------- search: every chapter, as you type ---------- */
+  const fold = (t) => t.toLowerCase().replace(/[À-ſ]/g, (c) => c.normalize('NFD')[0]);
+  let searchIdx = null;
+  function buildSearchIndex() {
+    searchIdx = library.map((e) => ({
+      e,
+      head: fold([e.title, e.place, e.blurb].join(' ')),
+      ch: e.chapters.map((c) => { const raw = c.paragraphs.map((p) => p.replace(SPEAKER_RE, '')).join(' '); return { raw, low: fold(raw), label: fold(c.label) }; }),
+    }));
+  }
+  function highlight(text, tokens) {
+    const low = fold(text), spans = [];
+    tokens.forEach((t) => { let i = low.indexOf(t); while (i >= 0) { spans.push([i, i + t.length]); i = low.indexOf(t, i + t.length); } });
+    spans.sort((a, b) => a[0] - b[0]);
+    const out = document.createDocumentFragment(); let pos = 0;
+    spans.forEach(([a, b]) => {
+      if (a < pos) return;
+      if (a > pos) out.append(text.slice(pos, a));
+      out.append(mk('mark', '', text.slice(a, b))); pos = b;
+    });
+    if (pos < text.length) out.append(text.slice(pos));
+    return out;
+  }
+  function runSearch(q) {
+    const box = $('search-results');
+    box.textContent = '';
+    const tokens = fold(q).split(/[^a-z0-9']+/).filter((t) => t.length > 1);
+    if (!tokens.length) {
+      box.append(mk('p', 'lede', 'Search names, places and events across every chapter of every episode.'));
+      return;
+    }
+    if (!searchIdx) buildSearchIndex();
+    const found = [];
+    searchIdx.forEach((it) => {
+      if (hidden.includes(it.e.id) || !isPrimary(it.e)) return;
+      const headHit = tokens.every((t) => it.head.includes(t));
+      const hits = [];
+      it.ch.forEach((c, n) => {
+        if (!tokens.every((t) => c.low.includes(t) || c.label.includes(t))) return;
+        let score = 0; tokens.forEach((t) => { let i = c.low.indexOf(t), k = 0; while (i >= 0 && k < 8) { k++; i = c.low.indexOf(t, i + t.length); } score += k; });
+        if (tokens.every((t) => c.label.includes(t))) score += 6;
+        hits.push({ n, score });
+      });
+      if (!headHit && !hits.length) return;
+      hits.sort((a, b) => b.score - a.score);
+      found.push({ it, headHit, hits: hits.slice(0, 3), score: (headHit ? 30 : 0) + hits.slice(0, 2).reduce((m, h) => m + h.score, 0) });
+    });
+    found.sort((a, b) => b.score - a.score);
+    if (!found.length) { box.append(mk('p', 'lede', 'Nothing found for “' + q.trim() + '”. Try a shorter word or another spelling.')); return; }
+    found.slice(0, 12).forEach(({ it, hits }) => {
+      const e = it.e;
+      const r = mk('div', 'result', '');
+      r.append(coverEl(e));
+      const col = mk('div', '', '');
+      const h = mk('h3', '', ''); const tb = mk('button', 'hit-title', e.title); tb.type = 'button';
+      tb.addEventListener('click', () => { location.hash = '#/e/' + encodeURIComponent(e.id); });
+      h.append(tb); col.append(h);
+      hits.forEach((hit) => {
+        const c = it.ch[hit.n];
+        const first = Math.min(...tokens.map((t) => { const i = c.low.indexOf(t); return i < 0 ? 1e9 : i; }));
+        let start = first >= 1e9 ? 0 : Math.max(0, first - 70);
+        if (start > 0) { const sp = c.raw.indexOf(' ', start); if (sp >= 0 && sp < first) start = sp + 1; }
+        const piece = c.raw.slice(start, start + 190);
+        const b = mk('button', 'hit', ''); b.type = 'button';
+        const sm = mk('small', '', e.chapters[hit.n].label);
+        const sp = mk('span', '', '');
+        sp.append((start > 0 ? '…' : ''), highlight(piece, tokens), (start + 190 < c.raw.length ? '…' : ''));
+        b.append(sm, sp);
+        b.addEventListener('click', () => { location.hash = '#/e/' + encodeURIComponent(e.id) + '?ch=' + hit.n + '&q=' + encodeURIComponent(q.trim()); });
+        col.append(b);
+      });
+      r.append(col);
+      box.append(r);
+    });
+  }
+
+  /* ---------- create: build a request for Claude (sending it from the app comes later) ---------- */
+  function buildRequest() {
+    const kind = $('cr-kind').value, place = $('cr-place').value.trim();
+    const spec = { overview: 'about 12 minutes of audio (roughly 1,800 words), 5 or 6 short chapters', walk: 'about 30 to 40 minutes of audio (roughly 4,500 to 6,000 words), one chapter per stop, with turn-by-turn directions and a short pause cue at each stop', deep: 'about an hour or more of audio (roughly 9,000 words or more), 8 to 10 chapters' }[kind];
+    const lines = [
+      'Please write a new Travel Podcasts episode and add it to the travel-podcasts repo, in the same format as the existing episodes (front matter with title, place, order, blurb, speakers, voices and format, then a Welcome and numbered Chapters, then Sources consulted).',
+      '',
+      `Format: ${FORMATS[kind].label} (format: ${kind}), ${spec}.`,
+      `Place: ${place || '(not given)'}`,
+    ];
+    const stops = $('cr-stops').value.split('\n').map((x) => x.trim()).filter(Boolean);
+    if (kind === 'walk' && stops.length) { lines.push('Stops, in order:'); stops.forEach((x, i) => lines.push(`${i + 1}. ${x}`)); }
+    if ($('cr-time').value.trim()) lines.push('Time available: ' + $('cr-time').value.trim());
+    if ($('cr-interests').value.trim()) lines.push('What we care about: ' + $('cr-interests').value.trim());
+    lines.push('Style: ' + $('cr-style').value + '.');
+    if ($('cr-notes').value.trim()) lines.push('Practical notes: ' + $('cr-notes').value.trim());
+    lines.push('', 'Research the facts on the web, keep to what the sources support, and list them under Sources consulted. Write years as numerals, except three-digit years, which are spelled out in words. Push it to main so the audio is built automatically, and tell me when it is ready.');
+    return lines.join('\n');
+  }
+  function syncCreateForm() { $('cr-stops-wrap').hidden = $('cr-kind').value !== 'walk'; }
 
   function syncPhoneBox() { const b = $('phone-box'); if (b) b.hidden = engine() === 'natural'; }
 
@@ -659,7 +902,7 @@
     if (!p.items.length) ul.append(mk('li', 'fine', 'This playlist is empty. Use the ⋯ button on an episode to add it.'));
     p.items.forEach((eid, i) => {
       const e = epById(eid);
-      const li = mk('li', 'row');
+      const li = mk('li', 'pl-row');
       const t = mk('button', 'row-title', '');
       t.append(mk('span', '', e.title), mk('small', '', `${e.place ? e.place + ' · ' : ''}about ${e.minutes} min`));
       t.addEventListener('click', () => { location.hash = '#/e/' + encodeURIComponent(eid) + '?pl=' + encodeURIComponent(p.id); });
@@ -677,7 +920,7 @@
     $('pl-rename').onclick = () => askName('Rename playlist', p.name, (name) => { p.name = name; savePlaylists(); $('title').textContent = name; });
     $('pl-delete').onclick = () => {
       if (!confirm('Delete the playlist "' + p.name + '"? The episodes stay in your library.')) return;
-      playlists = playlists.filter((x) => x.id !== p.id); savePlaylists(); location.hash = '';
+      playlists = playlists.filter((x) => x.id !== p.id); savePlaylists(); location.hash = '#/library';
     };
   }
 
@@ -756,7 +999,7 @@
     for (let j = 0; j < i; j++) if (voiceFor(ep.speakers[j]) === voice) return [1, 0.8, 1.2, 0.9][i % 4];
     return 1;
   }
-  const SPEAKER_COLORS = ['#1d6fa5', '#b5532b', '#4a7c3f', '#8a4fa0'];
+  const SPEAKER_COLORS = ['var(--sp0)', 'var(--sp1)', 'var(--sp2)', 'var(--sp3)'];
 
   /* keep-alive audio + media session: lets playback continue and shows lock-screen controls */
   let keepAlive = null;
@@ -855,7 +1098,7 @@
 
   async function loadUnits(e, n) {
     if (audioEntry(e, n) && !audioFailed.has(e.id + ':' + n)) {
-      try { return { units: (await fetchChapterJson(e, n)).units, audio: true }; } catch (err) { /* fall back to the phone voice */ }
+      try { const j = await fetchChapterJson(e, n); return { units: j.units, audio: true, duration: j.duration || 0 }; } catch (err) { /* fall back to the phone voice */ }
     }
     return { units: buildUnits(e.chapters[n], e.speakers).units, audio: false };
   }
@@ -904,7 +1147,7 @@
   // front, the phone may freeze this page the moment audio stops, so nothing may wait on the network here.
   function fastNext() {
     const n = chIdx + 1;
-    if (!settings.autonext || !ep || n >= ep.chapters.length || mode !== 'audio') return false;
+    if (!settings.autonext || !ep || n >= ep.chapters.length || mode !== 'audio' || (sleep && sleep.chapter)) return false;
     if (!audioEntry(ep, n) || audioFailed.has(ep.id + ':' + n)) return false;
     const data = jsonCache.get(audioUrl(ep, n, 'json'));
     if (!data || data.hash !== ep.chapters[n].hash) return false;
@@ -926,7 +1169,7 @@
 
   audioEl.addEventListener('loadedmetadata', () => {
     if (pendingSeek !== null) { audioEl.currentTime = pendingSeek; pendingSeek = null; }
-    setPosition();
+    setPosition(); updateScrub();
   });
   audioEl.addEventListener('timeupdate', () => {
     if (mode !== 'audio' || !units.length || pendingSeek !== null) return;
@@ -935,6 +1178,8 @@
     while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (units[mid].t <= t + 0.05) lo = mid; else hi = mid - 1; }
     if (lo !== idx) { idx = lo; mark(lo, !audioEl.paused); remember(false); }
     const d = audioEl.duration;
+    updateScrub();
+    if (sleep && sleep.at && Date.now() >= sleep.at) sleepNow();
     if (d) {
       setBar(Math.round((t / d) * 100));
       if (t > d * 0.6 && !nextPre) prefetchNext(true);
@@ -963,9 +1208,131 @@
   });
 
   /* ---------- rendering the reader ---------- */
+  let chDuration = 0, wordsPre = [0], scrubbing = false;
+  const fmtTime = (sec) => { sec = Math.max(0, Math.round(sec)); return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'); };
+  function drawHero() {
+    if (!ep) return;
+    $('hero-cover').textContent = ''; $('hero-cover').append(coverEl(ep));
+    $('hero-title').textContent = ep.title;
+    $('hero-sub').textContent = [ep.place, FORMATS[fmtOf(ep)].label, variantOf(ep)].filter(Boolean).join(' \u00b7 ');
+    const fam = family(ep);
+    $('ver-btn').hidden = fam.length < 2;
+    $('ver-label').textContent = variantOf(ep);
+  }
+  function updateScrub(force) {
+    if (scrubbing && !force) return;
+    const sc = $('scrubber');
+    if (!ep) return;
+    if (mode === 'audio') {
+      const d = (audioEl.duration && isFinite(audioEl.duration)) ? audioEl.duration : chDuration;
+      if (!d) { sc.value = 0; $('t-cur').textContent = '0:00'; $('t-left').textContent = ''; return; }
+      const t = Math.min(audioEl.currentTime || 0, d);
+      sc.value = Math.round((t / d) * 1000); sc.style.setProperty('--p', sc.value / 10 + '%');
+      $('t-cur').textContent = fmtTime(t);
+      $('t-left').textContent = '-' + fmtTime((d - t) / (settings.rate || 1));
+    } else {
+      const total = wordsPre[wordsPre.length - 1] || 1, at = wordsPre[Math.min(idx, wordsPre.length - 1)] || 0;
+      const wps = (WPM / 60) * (settings.rate || 1);
+      sc.value = Math.round((at / total) * 1000); sc.style.setProperty('--p', sc.value / 10 + '%');
+      $('t-cur').textContent = fmtTime(at / wps);
+      $('t-left').textContent = '-' + fmtTime((total - at) / wps);
+    }
+  }
+  function onScrubInput() {
+    scrubbing = true;
+    const v = $('scrubber').value / 1000;
+    $('scrubber').style.setProperty('--p', v * 100 + '%');
+    if (mode === 'audio') {
+      const d = (audioEl.duration && isFinite(audioEl.duration)) ? audioEl.duration : chDuration;
+      $('t-cur').textContent = fmtTime(v * d);
+      $('t-left').textContent = '-' + fmtTime((1 - v) * d / (settings.rate || 1));
+    } else {
+      const total = wordsPre[wordsPre.length - 1] || 1, wps = (WPM / 60) * (settings.rate || 1);
+      $('t-cur').textContent = fmtTime(v * total / wps);
+      $('t-left').textContent = '-' + fmtTime((1 - v) * total / wps);
+    }
+  }
+  function onScrubCommit() {
+    const v = $('scrubber').value / 1000;
+    scrubbing = false;
+    if (!ep || !units.length) return;
+    if (mode === 'audio') {
+      const d = (audioEl.duration && isFinite(audioEl.duration)) ? audioEl.duration : chDuration;
+      if (audioEl.readyState >= 1) audioEl.currentTime = v * d; else pendingSeek = v * d;
+      let lo = 0; units.forEach((u, i) => { if (u.t <= v * d + 0.05) lo = i; });
+      idx = lo; mark(lo, true); remember(false);
+    } else {
+      const target = v * (wordsPre[wordsPre.length - 1] || 1);
+      let i = 0; while (i < units.length - 1 && wordsPre[i + 1] <= target) i++;
+      idx = i; mark(i, true); remember(false);
+      if (playing) start(i);
+    }
+  }
+
+  /* ---------- sleep timer ---------- */
+  let sleep = null, sleepT = null, sleepTick = null; // sleep: { at } minutes from now, or { chapter: true }
+  function updateSleepLabel() {
+    let t = 'Sleep';
+    if (sleep && sleep.chapter) t = 'Sleep \u00b7 end of chapter';
+    else if (sleep && sleep.at) t = 'Sleep \u00b7 ' + Math.max(1, Math.round((sleep.at - Date.now()) / 60000)) + ' min';
+    $('sleep-label').textContent = t;
+    $('sleep-btn').classList.toggle('on', !!sleep);
+  }
+  function setSleep(opt) {
+    clearTimeout(sleepT); clearInterval(sleepTick); sleepT = sleepTick = null; sleep = null;
+    if (opt === 'chapter') sleep = { chapter: true };
+    else if (opt > 0) { sleep = { at: Date.now() + opt * 60000 }; sleepT = setTimeout(sleepNow, opt * 60000); }
+    if (sleep) sleepTick = setInterval(updateSleepLabel, 15000);
+    updateSleepLabel();
+  }
+  function sleepNow() {
+    clearTimeout(sleepT); clearInterval(sleepTick); sleepT = sleepTick = null; sleep = null; updateSleepLabel();
+    if (!playing) return;
+    showToast('Sleep timer: paused.');
+    if (mode === 'audio') {
+      let v = 1;
+      const f = setInterval(() => {
+        v -= 0.125;
+        if (v <= 0.01) { clearInterval(f); pause(); try { audioEl.volume = 1; } catch (e) { /* optional */ } } else { try { audioEl.volume = v; } catch (e) { /* optional */ } }
+      }, 300);
+    } else pause();
+  }
+  function openSleep() {
+    const box = $('sleep-opts'); box.textContent = '';
+    const cur = !sleep ? 'off' : sleep.chapter ? 'chapter' : 'time';
+    [['Off', 'off', 0], ['15 minutes', 'time', 15], ['30 minutes', 'time', 30], ['45 minutes', 'time', 45], ['1 hour', 'time', 60], ['At the end of this chapter', 'chapter', 'chapter']].forEach(([label, kind, val]) => {
+      const b = mk('button', 'opt', label); b.type = 'button';
+      if (kind === cur && (kind !== 'time')) b.setAttribute('aria-current', 'true');
+      b.addEventListener('click', () => { $('dlg-sleep').close(); setSleep(val === 0 ? 0 : val); showToast(kind === 'off' ? 'Sleep timer off.' : 'Sleep timer set.'); });
+      box.append(b);
+    });
+    $('dlg-sleep').showModal();
+  }
+
+  /* ---------- the other version of the same episode ---------- */
+  function openVersions() {
+    const box = $('ver-opts'); box.textContent = '';
+    family(ep).forEach((x) => {
+      const b = mk('button', 'opt', ''); b.type = 'button';
+      b.append(mk('span', '', variantOf(x)), mk('small', '', `about ${x.minutes} min`));
+      if (x.id === ep.id) b.setAttribute('aria-current', 'true');
+      b.addEventListener('click', () => {
+        $('dlg-ver').close();
+        if (x.id === ep.id) return;
+        const frac = units.length ? Math.round((idx / units.length) * 1000) / 1000 : 0;
+        location.hash = '#/e/' + encodeURIComponent(x.id) + '?ch=' + chIdx + '&f=' + frac + (curPl ? '&pl=' + encodeURIComponent(curPl) : '') + (playing ? '&play=1' : '');
+      });
+      box.append(b);
+    });
+    $('dlg-ver').showModal();
+  }
+
   function renderChapter(data) {
     const ch = ep.chapters[chIdx];
     units = data.units;
+    chDuration = data.duration || 0;
+    let acc = 0; wordsPre = [0];
+    units.forEach((u) => { acc += u.text.split(/\s+/).length; wordsPre.push(acc); });
     mode = data.audio ? 'audio' : 'speech';
     const reader = $('reader');
     reader.textContent = '';
@@ -1000,6 +1367,8 @@
       if (curBlobUrl) { URL.revokeObjectURL(curBlobUrl); curBlobUrl = null; }
     }
     $('ch-label').textContent = ch.label;
+    drawHero();
+    updateScrub(true);
     $('ch-meta').textContent = `${chIdx + 1} of ${ep.chapters.length} · ${mode === 'audio' ? 'natural voice' : naturalOnly(ep) ? 'audio ' + STATE_TEXT[chapterState(ep, chIdx)] : 'phone voice'}`;
     const src = $('sources');
     if (chIdx === ep.chapters.length - 1 && ep.sources.length) {
@@ -1021,6 +1390,7 @@
       s.classList.toggle('done', j < i);
     });
     if (!(mode === 'audio' && audioEl.duration)) setBar(units.length ? Math.round((i / units.length) * 100) : 0);
+    updateScrub();
     if (scroll && spans[i]) {
       const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       spans[i].scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' });
@@ -1029,12 +1399,16 @@
 
   function remember(done) {
     if (!ep) return;
-    progress[ep.id] = done ? { ch: ep.chapters.length - 1, u: units.length, n: units.length, done: true } : { ch: chIdx, u: idx, n: units.length };
+    const t = Date.now();
+    progress[ep.id] = done ? { ch: ep.chapters.length - 1, u: units.length, n: units.length, done: true, t } : { ch: chIdx, u: idx, n: units.length, t };
     saveProgress();
   }
 
   /* ---------- views and the mini player (playback carries on while you browse) ---------- */
-  let view = 'library'; // 'library' | 'playlist' | 'player'
+  let view = 'home'; // 'home' | 'search' | 'library' | 'create' | 'playlist' | 'player'
+  let lastTab = '#/';
+  const TAB_HASH = { home: '#/', search: '#/search', library: '#/library', create: '#/create' };
+  const TITLES = { home: 'Travel Podcasts', search: 'Search', library: 'Library', create: 'Create' };
   function setBar(pct) { $('bar-fill').style.width = pct + '%'; $('mini-fill').style.width = pct + '%'; }
   function updateMini() {
     const show = !!ep && view !== 'player';
@@ -1048,9 +1422,15 @@
   }
   function setView(v) {
     view = v;
-    $('view-library').hidden = v !== 'library'; $('view-playlist').hidden = v !== 'playlist';
-    $('view-player').hidden = v !== 'player'; $('transport').hidden = v !== 'player';
-    $('back').hidden = v === 'library';
+    ['home', 'search', 'create', 'library', 'playlist', 'player'].forEach((n) => { $('view-' + n).hidden = n !== v; });
+    $('transport').hidden = v !== 'player';
+    document.body.classList.toggle('v-player', v === 'player');
+    const isTab = !!TAB_HASH[v];
+    $('back').hidden = isTab;
+    $('as-wrap').hidden = !(v === 'home' || v === 'library');
+    const active = isTab ? v : v === 'playlist' ? 'library' : null;
+    document.querySelectorAll('#tabbar a').forEach((a) => { if (a.dataset.tab === active) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+    if (isTab) { lastTab = TAB_HASH[v]; $('title').textContent = TITLES[v]; document.title = v === 'home' ? 'Travel Podcasts' : TITLES[v] + ' \u00b7 Travel Podcasts'; }
     window.scrollTo({ top: 0 });
     updateMini();
   }
@@ -1150,7 +1530,7 @@
     if (mode === 'audio') { seekToUnit(i); if (!playing) play(); } else start(i);
   }
 
-  async function gotoChapter(n, keepPlaying, at) {
+  async function gotoChapter(n, keepPlaying, at, frac) {
     if (!ep || n < 0 || n >= ep.chapters.length) return;
     const seq = ++loadSeq;
     stopAll();
@@ -1158,6 +1538,7 @@
     const data = await loadUnits(ep, n);
     if (seq !== loadSeq) return;
     renderChapter(data);
+    if (frac != null) idx = Math.floor(frac * units.length);
     idx = Math.min(idx, Math.max(0, units.length - 1));
     if (mode === 'audio') seekToUnit(idx);
     mark(idx, false);
@@ -1168,6 +1549,11 @@
   }
 
   async function chapterDone() {
+    if (sleep && sleep.chapter) {
+      setSleep(0); showToast('Sleep timer: stopped at the end of the chapter.');
+      if (chIdx + 1 < ep.chapters.length) { await gotoChapter(chIdx + 1, false); return; }
+      playing = false; stopAll(); switching = false; setPlayingUi(); unlockScreen(); remember(true); return;
+    }
     if (settings.autonext && chIdx + 1 < ep.chapters.length) { await gotoChapter(chIdx + 1, true); return; }
     const last = chIdx + 1 >= ep.chapters.length;
     playing = false; stopAll(); switching = false; setPlayingUi(); unlockScreen();
@@ -1185,17 +1571,22 @@
   }
 
   /* ---------- views and routing ---------- */
+  function showHome() { setView('home'); renderLibrary(); }
   function showLibrary() {
     setView('library');
-    $('title').textContent = 'Travel Podcasts';
-    document.title = 'Travel Podcasts';
     renderLibrary();
-    if ('caches' in window) refreshOffline().then(() => { if (view === 'library') renderLibrary(); });
+    if ('caches' in window) refreshOffline().then(() => { renderLibrary(); });
   }
+  function showSearch() {
+    setView('search');
+    runSearch($('search-input').value);
+    if (!$('search-input').value) setTimeout(() => { try { $('search-input').focus(); } catch (e) { /* optional */ } }, 50);
+  }
+  function showCreate() { setView('create'); syncCreateForm(); }
 
   function showPlaylist(id) {
     const p = plById(id);
-    if (!p) { location.hash = ''; return; }
+    if (!p) { location.hash = '#/library'; return; }
     tab = 'playlists'; store.set('tp.tab', tab);
     setView('playlist');
     $('title').textContent = p.name; document.title = p.name + ' \u00b7 Travel Podcasts';
@@ -1204,28 +1595,47 @@
 
   function enterPlayerView() {
     setView('player');
-    $('title').textContent = ep.title; document.title = ep.title + ' \u00b7 Travel Podcasts';
+    $('title').textContent = ep.place || 'Now playing'; document.title = ep.title + ' \u00b7 Travel Podcasts';
+    drawHero(); updateScrub(true);
+  }
+
+  // Coming from a search result: move to the first sentence that mentions what was searched for.
+  function jumpToQuery(q) {
+    if (!q || !units.length) return;
+    const tk = fold(q).split(/[^a-z0-9']+/).filter((t) => t.length > 1);
+    if (!tk.length) return;
+    let j = units.findIndex((u) => tk.every((t) => fold(u.text).includes(t)));
+    if (j < 0) j = units.findIndex((u) => fold(u.text).includes(tk[0]));
+    if (j < 0) return;
+    idx = j; if (mode === 'audio') seekToUnit(j);
+    mark(j, false); remember(false);
+    setTimeout(() => mark(j, true), 80);
   }
 
   // quiet: load and start an episode without taking over the screen (the next playlist item while you browse)
-  async function showEpisode(id, plId, autoplay, quiet) {
+  async function showEpisode(id, plId, autoplay, quiet, opts) {
+    opts = opts || {};
     const found = library.find((e) => e.id === id);
-    if (!found) { if (!quiet) location.hash = ''; return; }
+    if (!found) { if (!quiet) location.hash = '#/'; return; }
     if (plId && plById(plId)) curPl = plId;
     else if (!(ep && ep.id === id)) curPl = null;
     if (ep && ep.id === id) { // already loaded: just show it, never restart it
-      if (!quiet) { enterPlayerView(); setTimeout(() => mark(idx, true), 50); }
+      if (!quiet) enterPlayerView();
+      if (opts.ch != null && opts.ch !== chIdx && ep.chapters[opts.ch]) { await gotoChapter(opts.ch, autoplay || playing); jumpToQuery(opts.q); }
+      else { if (opts.q) jumpToQuery(opts.q); else if (!quiet) setTimeout(() => mark(idx, true), 50); }
       if (autoplay && !playing) play();
       return;
     }
     if (playing) pause();
     ep = found;
     const pr = progress[ep.id];
-    const ch = pr && !pr.done && ep.chapters[pr.ch] ? pr.ch : 0;
-    const at = pr && !pr.done ? pr.u || 0 : 0;
+    const forced = opts.ch != null && ep.chapters[Math.min(opts.ch, ep.chapters.length - 1)] ? Math.min(opts.ch, ep.chapters.length - 1) : null;
+    const ch = forced != null ? forced : pr && !pr.done && ep.chapters[pr.ch] ? pr.ch : 0;
+    const at = forced != null ? 0 : pr && !pr.done ? pr.u || 0 : 0;
     if (!quiet) enterPlayerView();
-    await gotoChapter(ch, false, at);
-    if (idx > 0 && !quiet) setTimeout(() => mark(idx, true), 50);
+    await gotoChapter(ch, false, at, forced != null && opts.f != null && !isNaN(opts.f) ? opts.f : null);
+    if (opts.q) jumpToQuery(opts.q);
+    else if (idx > 0 && !quiet) setTimeout(() => mark(idx, true), 50);
     if (autoplay) play();
   }
 
@@ -1234,11 +1644,16 @@
     let m = h.match(/^#\/e\/([^?]+)(?:\?(.*))?$/);
     if (m) {
       const q = new URLSearchParams(m[2] || '');
-      showEpisode(decodeURIComponent(m[1]), q.get('pl'), q.get('play') === '1');
+      showEpisode(decodeURIComponent(m[1]), q.get('pl'), q.get('play') === '1', false,
+        { ch: q.has('ch') ? parseInt(q.get('ch'), 10) : null, q: q.get('q') || '', f: q.has('f') ? parseFloat(q.get('f')) : null });
       return;
     }
     m = h.match(/^#\/p\/(.+)$/);
-    if (m) showPlaylist(decodeURIComponent(m[1])); else showLibrary();
+    if (m) { showPlaylist(decodeURIComponent(m[1])); return; }
+    if (h === '#/library') showLibrary();
+    else if (h === '#/search') showSearch();
+    else if (h === '#/create') showCreate();
+    else showHome();
   }
 
   /* ---------- keep the app current: a page left open in the background never reloads itself ---------- */
@@ -1320,7 +1735,7 @@
   }
 
   function wire() {
-    $('back').addEventListener('click', () => { location.hash = view === 'player' && ep && curPl ? '#/p/' + encodeURIComponent(curPl) : ''; });
+    $('back').addEventListener('click', () => { location.hash = view === 'player' ? (ep && curPl ? '#/p/' + encodeURIComponent(curPl) : lastTab) : '#/library'; });
     $('as-details').addEventListener('click', openAudioDetails);
     $('mini-open').addEventListener('click', () => { if (ep) location.hash = '#/e/' + encodeURIComponent(ep.id) + (curPl ? '?pl=' + encodeURIComponent(curPl) : ''); });
     $('mini-play').addEventListener('click', () => toggle());
@@ -1328,6 +1743,20 @@
     document.querySelectorAll('#tabs button').forEach((b) => b.addEventListener('click', () => {
       tab = b.dataset.tab; store.set('tp.tab', tab); renderLibrary();
     }));
+    $('scrubber').addEventListener('input', onScrubInput);
+    $('scrubber').addEventListener('change', onScrubCommit);
+    $('scrubber').addEventListener('pointerup', () => setTimeout(() => { scrubbing = false; }, 400));
+    $('sleep-btn').addEventListener('click', openSleep);
+    $('ver-btn').addEventListener('click', openVersions);
+    let st = null;
+    $('search-input').addEventListener('input', (e) => { clearTimeout(st); st = setTimeout(() => runSearch(e.target.value), 120); });
+    $('cr-kind').addEventListener('change', syncCreateForm);
+    $('cr-copy').addEventListener('click', async () => {
+      const text = buildRequest();
+      const out = $('cr-out'); out.value = text; out.hidden = false;
+      try { await navigator.clipboard.writeText(text); showToast('Copied. Paste it into your chat with Claude.'); }
+      catch (err) { out.focus(); out.select(); showToast('Press and hold the text to copy it.'); }
+    });
     $('show-hidden').addEventListener('click', () => { showHidden = !showHidden; renderLibrary(); });
     $('pl-new').addEventListener('click', () => askName('New playlist', '', (name) => {
       playlists.push({ id: 'pl-' + Date.now().toString(36), name, items: [] }); savePlaylists(); renderLibrary();
