@@ -7,6 +7,8 @@ Episode format (see README.md):
   place: X
   order: 3
   blurb: One sentence shown on the library card.
+  format: overview (10 to 15 min briefing), walk (stop-by-stop walking tour) or deep (long deep dive). Default deep.
+  series: optional name that groups variants of the same topic.
   speakers: Anna, Ben                 (optional, for two-voice dialogue episodes)
   ---
   ## Notes before you listen ...      (skipped when listening)
@@ -146,6 +148,8 @@ def parse_episode(raw: str, slug: str):
         "id": slug,
         "title": title,
         "place": meta.get("place", ""),
+        "format": meta.get("format", "deep"),  # overview | walk | deep
+        "series": meta.get("series", ""),
         "blurb": meta.get("blurb", ""),
         "order": float(meta.get("order", 999)),
         "words": words,
