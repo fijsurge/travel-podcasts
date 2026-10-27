@@ -31,6 +31,7 @@ TURN_GAP = 0.70      # seconds between paragraphs / speaker turns
 MP3_BITRATE = "48k"
 
 # ---------- text preparation ----------
+# (touching this file re-runs the audio job, which fills in any chapter whose audio is missing)
 ABBR = re.compile(r"\b(?:Mr|Mrs|Ms|Dr|St|Ste|Mt|Jr|Sr|Prof|vs|etc|No|Fr|Gen|Col|Capt|Sgt|Lt|Ft|approx|c|ca)\.$")
 BOUND = re.compile(r"""[.!?]["'”’)\]]?\s+(?=["'“‘(]?[A-Z0-9À-ſ])""")
 

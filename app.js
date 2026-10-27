@@ -860,6 +860,7 @@
       });
       return;
     }
+    if (!play.warned) { play.warned = true; showToast('This part uses your phone voice, which stops when you leave the app. Natural audio is still being made for it.'); }
     start(Math.min(idx, Math.max(0, units.length - 1)));
   }
 

@@ -100,6 +100,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main  # newest main, not the commit that started this run (other runs may have published since)
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -108,17 +110,26 @@ jobs:
         with:
           pattern: audio-*
           path: incoming
-      - name: Unpack, rebuild library and manifest
-        run: |
-          for f in incoming/*/chapter.tgz; do [ -f "$f" ] && tar xzf "$f"; done
-          python tools/build.py
-          python tools/make_audio.py finalize
-      - name: Commit
+      - name: Rebuild library and audio manifest, commit, push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add audio library.json
+          assemble() {
+            for f in incoming/*/chapter.tgz; do [ -f "$f" ] && tar xzf "$f"; done
+            python tools/build.py
+            python tools/make_audio.py finalize
+            git add audio library.json
+          }
+          assemble
           if git diff --cached --quiet; then echo "nothing to commit"; exit 0; fi
           git commit -m "Update generated audio and library"
-          git pull --rebase origin main
-          git push origin HEAD:main
+          for attempt in 1 2 3 4; do
+            if git push origin HEAD:main; then exit 0; fi
+            echo "push rejected (attempt $attempt); rebuilding on the newest main"
+            git fetch origin main
+            git reset --hard origin/main
+            assemble
+            if git diff --cached --quiet; then echo "nothing left to commit"; exit 0; fi
+            git commit -m "Update generated audio and library"
+          done
+          exit 1
