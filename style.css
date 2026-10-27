@@ -180,3 +180,11 @@ code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: .
 }
 
 @media (prefers-reduced-motion: reduce) { .bar-fill { transition: none; } }
+
+/* Dialogue episodes */
+.reader .who {
+  display: block; margin-bottom: 2px; font: 700 .72rem/1.2 var(--sans);
+  letter-spacing: .08em; text-transform: uppercase; color: var(--who, var(--accent));
+}
+.reader p:has(> .who) { padding-left: 12px; border-left: 3px solid var(--who, var(--accent)); }
+.reader p:has(> .who) .who { margin-left: 0; }

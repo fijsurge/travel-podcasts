@@ -7,6 +7,7 @@ Episode format (see README.md):
   place: X
   order: 3
   blurb: One sentence shown on the library card.
+  speakers: Anna, Ben                 (optional, for two-voice dialogue episodes)
   ---
   ## Notes before you listen ...      (skipped when listening)
   ## Welcome                          (played)
@@ -30,6 +31,25 @@ def clean(text: str) -> str:
     text = re.sub(r"[*_`]+", "", text)  # emphasis / code marks
     text = re.sub(r"[ \t]+", " ", text)
     return text.strip()
+
+
+SPEAKER_RE = re.compile(r"^([A-Z\u00C0-\u00DD][A-Za-z\u00C0-\u00FF'\u2019-]{0,19}(?: [A-Z\u00C0-\u00DD][A-Za-z\u00C0-\u00FF'\u2019-]{0,19})?): ")
+
+
+def detect_speakers(meta, chapters):
+    """Dialogue episodes: a paragraph starting "Name: " is spoken by that speaker.
+    Declared in front matter (speakers: Anna, Ben) or auto-detected when two or more
+    names each open at least two paragraphs. Same rule as app.js."""
+    if meta.get("speakers"):
+        return [s.strip() for s in meta["speakers"].split(",") if s.strip()]
+    counts = {}
+    for c in chapters:
+        for p in c["paragraphs"]:
+            m = SPEAKER_RE.match(p)
+            if m:
+                counts[m.group(1)] = counts.get(m.group(1), 0) + 1
+    names = [n for n, k in counts.items() if k >= 2]
+    return names if len(names) >= 2 else []
 
 
 def parse_front(raw: str):
@@ -80,6 +100,7 @@ def parse_episode(raw: str, slug: str):
         "notes": notes,
         "chapters": chapters,
         "sources": sources,
+        "speakers": detect_speakers(meta, chapters),
     }
 
 

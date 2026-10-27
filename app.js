@@ -23,7 +23,7 @@
   };
 
   const settings = Object.assign(
-    { rate: 1, voiceURI: '', wake: true, autonext: true, pron: '' },
+    { rate: 1, voiceURI: '', wake: true, autonext: true, pron: '', speakerVoices: {} },
     store.get('tp.settings', {})
   );
   const saveSettings = () => store.set('tp.settings', settings);
@@ -80,8 +80,23 @@
       id: id || 'user-' + Date.now(),
       title, place: meta.place || '', blurb: meta.blurb || '',
       order: parseFloat(meta.order || '999'), words, minutes: Math.max(1, Math.round(words / WPM)),
-      notes, chapters, sources,
+      notes, chapters, sources, speakers: detectSpeakers(meta, chapters),
     };
+  }
+
+  /* Dialogue episodes: a paragraph that starts with "Name: " is spoken by that speaker.
+   * Speakers come from the "speakers:" front-matter line, or are auto-detected when two or
+   * more different names each open at least two paragraphs. (Same rule as tools/build.py.) */
+  const SPEAKER_RE = /^([A-ZÀ-Ý][A-Za-zÀ-ÿ'’-]{0,19}(?: [A-ZÀ-Ý][A-Za-zÀ-ÿ'’-]{0,19})?): /;
+  function detectSpeakers(meta, chapters) {
+    if (meta.speakers) return meta.speakers.split(',').map((s) => s.trim()).filter(Boolean);
+    const counts = new Map();
+    chapters.forEach((c) => c.paragraphs.forEach((p) => {
+      const m = p.match(SPEAKER_RE);
+      if (m) counts.set(m[1], (counts.get(m[1]) || 0) + 1);
+    }));
+    const names = [...counts].filter(([, k]) => k >= 2).map(([n]) => n);
+    return names.length >= 2 ? names : [];
   }
 
   /* ---------- sentence splitting for speech ---------- */
@@ -109,10 +124,18 @@
     return out;
   }
 
-  function buildUnits(chapter) {
+  // Returns { units, who } where who[paragraphIndex] is the speaker name or null (narrator).
+  function buildUnits(chapter, speakers) {
     const units = [];
-    chapter.paragraphs.forEach((p, pi) => splitSentences(p).forEach((t) => units.push({ p: pi, text: t })));
-    return units;
+    const who = [];
+    chapter.paragraphs.forEach((text, pi) => {
+      let speaker = null;
+      const m = text.match(SPEAKER_RE);
+      if (m && speakers && speakers.includes(m[1])) { speaker = m[1]; text = text.slice(m[0].length); }
+      who[pi] = speaker;
+      splitSentences(text).forEach((t) => units.push({ p: pi, text: t, speaker }));
+    });
+    return { units, who };
   }
 
   /* ---------- library ---------- */
@@ -234,6 +257,28 @@
     return voices.find((v) => v.voiceURI === settings.voiceURI) || voices[0];
   }
 
+  // Voice for a named speaker: the one chosen in Settings, otherwise the next voices in the same
+  // language after the narrator's voice, so each speaker sounds different without any setup.
+  function voiceFor(speaker) {
+    if (!speaker || !ep || !ep.speakers) return currentVoice();
+    const saved = settings.speakerVoices[speaker];
+    const hit = saved && voices.find((v) => v.voiceURI === saved);
+    if (hit) return hit;
+    const base = currentVoice();
+    if (!base) return null;
+    const pool = voices.filter((v) => v.lang.slice(0, 2) === base.lang.slice(0, 2));
+    const i = Math.max(0, ep.speakers.indexOf(speaker));
+    return pool[(Math.max(0, pool.indexOf(base)) + i) % pool.length] || base;
+  }
+  // If two speakers end up on the same voice (only one installed), nudge the pitch to tell them apart.
+  function pitchFor(speaker, voice) {
+    if (!speaker || !ep || !ep.speakers) return 1;
+    const i = ep.speakers.indexOf(speaker);
+    for (let j = 0; j < i; j++) if (voiceFor(ep.speakers[j]) === voice) return [1, 0.8, 1.2, 0.9][i % 4];
+    return 1;
+  }
+  const SPEAKER_COLORS = ['#1d6fa5', '#b5532b', '#4a7c3f', '#8a4fa0'];
+
   /* keep-alive audio + media session: lets playback continue and shows lock-screen controls */
   let keepAlive = null;
   function silentWavUrl() {
@@ -298,14 +343,23 @@
 
   function renderChapter() {
     const ch = ep.chapters[chIdx];
-    units = buildUnits(ch);
+    const built = buildUnits(ch, ep.speakers);
+    units = built.units;
     const reader = $('reader');
     reader.textContent = '';
     const h = document.createElement('h2'); h.textContent = ch.label; reader.append(h);
     spans = [];
     let pi = -1, p = null;
     units.forEach((u, i) => {
-      if (u.p !== pi) { p = document.createElement('p'); reader.append(p); pi = u.p; }
+      if (u.p !== pi) {
+        p = document.createElement('p'); reader.append(p); pi = u.p;
+        if (u.speaker) {
+          const w = document.createElement('span');
+          w.className = 'who'; w.textContent = u.speaker;
+          p.style.setProperty('--who', SPEAKER_COLORS[Math.max(0, ep.speakers.indexOf(u.speaker)) % SPEAKER_COLORS.length]);
+          p.append(w);
+        }
+      }
       const s = document.createElement('span');
       s.className = 's'; s.dataset.i = String(i); s.textContent = u.text;
       p.append(s, document.createTextNode(' '));
@@ -358,9 +412,11 @@
     if (i >= units.length) { chapterDone(); return; }
     idx = i; mark(i, true); remember(false);
     const u = new SpeechSynthesisUtterance(pronounce(units[i].text));
-    const v = currentVoice();
+    const sp = units[i].speaker;
+    const v = voiceFor(sp);
     if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'en';
     u.rate = settings.rate;
+    u.pitch = pitchFor(sp, v);
     u.onend = () => { if (my === token && playing) speakUnit(i + 1, my); };
     u.onerror = (e) => {
       if (my !== token) return;
@@ -486,6 +542,28 @@
     $('dlg-chapters').showModal();
   }
 
+  // One voice picker per speaker of the open episode (hidden for single-narrator episodes).
+  function renderSpeakerVoices() {
+    const box = $('speaker-voices');
+    box.textContent = '';
+    if (!ep || !ep.speakers || !ep.speakers.length || !voices.length) { box.hidden = true; return; }
+    const h = document.createElement('p'); h.className = 'fine'; h.textContent = 'Speakers in this episode';
+    box.append(h);
+    ep.speakers.forEach((name) => {
+      const label = document.createElement('label'); label.className = 'field'; label.textContent = name;
+      const sel = document.createElement('select');
+      voices.forEach((v) => {
+        const o = document.createElement('option'); o.value = v.voiceURI; o.textContent = `${v.name} (${v.lang})`; sel.append(o);
+      });
+      const cur = voiceFor(name); if (cur) sel.value = cur.voiceURI;
+      sel.addEventListener('change', () => {
+        settings.speakerVoices[name] = sel.value; saveSettings(); if (playing) start(idx);
+      });
+      label.append(sel); box.append(label);
+    });
+    box.hidden = false;
+  }
+
   function wire() {
     $('back').addEventListener('click', () => { location.hash = ''; });
     $('play').addEventListener('click', toggle);
@@ -512,7 +590,7 @@
     // settings
     $('settings-btn').addEventListener('click', () => {
       $('wake').checked = !!settings.wake; $('autonext').checked = !!settings.autonext; $('pron').value = settings.pron || '';
-      loadVoices(); $('dlg-settings').showModal();
+      loadVoices(); renderSpeakerVoices(); $('dlg-settings').showModal();
     });
     $('voice').addEventListener('change', (e) => { settings.voiceURI = e.target.value; saveSettings(); if (playing) start(idx); });
     $('wake').addEventListener('change', (e) => { settings.wake = e.target.checked; saveSettings(); if (!settings.wake) unlockScreen(); else if (playing) lockScreen(); });
