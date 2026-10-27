@@ -694,8 +694,31 @@
     if (!d || !isFinite(d)) return;
     try { navigator.mediaSession.setPositionState({ duration: d, playbackRate: audioEl.playbackRate || 1, position: Math.min(audioEl.currentTime, d) }); } catch (e) { /* optional */ }
   }
-  function prefetchNext() {
-    if (ep && chIdx + 1 < ep.chapters.length && audioEntry(ep, chIdx + 1)) fetchChapterJson(ep, chIdx + 1).catch(() => {});
+  let warmEl = null;
+  function prefetchNext(warmAudio) {
+    if (!(ep && chIdx + 1 < ep.chapters.length && audioEntry(ep, chIdx + 1))) return;
+    fetchChapterJson(ep, chIdx + 1).catch(() => {});
+    if (warmAudio) { // start fetching the next MP3 so the hand-over has no gap
+      try { warmEl = new Audio(); warmEl.preload = 'auto'; warmEl.src = new URL(audioUrl(ep, chIdx + 1, 'mp3'), location.href).href; } catch (err) { /* optional */ }
+    }
+  }
+
+  // Hand over to the next chapter inside the 'ended' event itself. When the screen is off or another app is in
+  // front, the phone may freeze this page the moment audio stops, so nothing may wait on the network here.
+  function fastNext() {
+    const n = chIdx + 1;
+    if (!settings.autonext || !ep || n >= ep.chapters.length || mode !== 'audio') return false;
+    if (!audioEntry(ep, n) || audioFailed.has(ep.id + ':' + n)) return false;
+    const data = jsonCache.get(audioUrl(ep, n, 'json'));
+    if (!data || data.hash !== ep.chapters[n].hash) return false;
+    audioEl.src = new URL(audioUrl(ep, n, 'mp3'), location.href).href;
+    audioEl.playbackRate = settings.rate;
+    const p = audioEl.play();
+    if (p && p.catch) p.catch((err) => { if (!err || err.name !== 'AbortError') { playing = false; setPlayingUi(); unlockScreen(); showToast('Tap play to carry on.'); } });
+    loadSeq++; chIdx = n; idx = 0; pendingSeek = null;
+    renderChapter({ units: data.units, audio: true });
+    mark(0, true); remember(false);
+    return true;
   }
 
   audioEl.addEventListener('loadedmetadata', () => {
@@ -711,11 +734,11 @@
     const d = audioEl.duration;
     if (d) {
       $('bar-fill').style.width = Math.round((t / d) * 100) + '%';
-      if (t > d * 0.8) prefetchNext();
+      if (t > d * 0.8 && !warmEl) prefetchNext(true);
     }
     if (Date.now() - lastPos > 1000) { lastPos = Date.now(); setPosition(); }
   });
-  audioEl.addEventListener('ended', () => { if (mode === 'audio' && !switching) chapterDone(); });
+  audioEl.addEventListener('ended', () => { if (mode === 'audio' && !switching && !fastNext()) chapterDone(); });
   audioEl.addEventListener('pause', () => {
     // paused from outside (phone call, headset button, another app took audio focus)
     if (mode === 'audio' && playing && !switching && !audioEl.ended) { playing = false; setPlayingUi(); unlockScreen(); remember(false); }
@@ -765,6 +788,7 @@
       const src = new URL(audioUrl(ep, chIdx, 'mp3'), location.href).href;
       if (audioEl.src !== src) audioEl.src = src;
       audioEl.playbackRate = settings.rate;
+      warmEl = null; prefetchNext(false);
     } else if (audioEl.getAttribute('src')) {
       audioEl.removeAttribute('src'); audioEl.load();
     }
