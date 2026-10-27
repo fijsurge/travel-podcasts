@@ -213,3 +213,5 @@ code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: .
 
 .opt-hint { margin: -2px 2px 12px; }
 .sec { margin: 22px 0 0; font-size: 1rem; }
+
+.sec.first { margin-top: 12px; }

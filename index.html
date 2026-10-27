@@ -136,6 +136,8 @@
 <dialog id="dlg-settings">
   <form method="dialog" class="sheet">
     <h2>Settings</h2>
+    <p class="fine">Saved on this phone only. These settings change how this phone plays, never the audio files and never other devices.</p>
+    <h3 class="sec first">Playback</h3>
     <label class="field">Voice source
       <select id="engine">
         <option value="natural">Natural voices only (recommended)</option>
@@ -143,18 +145,21 @@
         <option value="phone">Always use my phone's voice</option>
       </select>
     </label>
-    <label class="field">Phone voice
-      <select id="voice"></select>
-    </label>
-    <div id="speaker-voices" hidden></div>
-    <p class="fine" id="voice-hint">The phone voice is used only if you choose it above. It stops when you leave the app, and its voices can differ from part to part. Better phone voices are usually under your phone's text-to-speech settings (for example "Google" or "Enhanced" voices). They appear here once installed.</p>
     <label class="field check"><input type="checkbox" id="wake"> Keep the screen on while playing</label>
     <label class="field check"><input type="checkbox" id="autonext"> Continue into the next chapter</label>
-    <label class="field">Say it differently
-      <textarea id="pron" rows="4" placeholder="Alzette = Al-zet&#10;Coudenberg = Cow-den-berg"></textarea>
-    </label>
-    <p class="fine">One per line, <em>word = how it should be said</em>. Only changes the spoken audio, never the text on screen.</p>
-    <button class="ghost wide" id="test-voice" type="button">Test this voice</button>
+    <div id="phone-box" hidden>
+      <h3 class="sec">Phone voice</h3>
+      <p class="fine" id="voice-hint">Only used when you choose it above. It stops when you leave the app, and its voices can differ from part to part. Better voices are usually under your phone's text-to-speech settings (for example "Google" or "Enhanced" voices) and appear here once installed.</p>
+      <label class="field">Phone voice
+        <select id="voice"></select>
+      </label>
+      <div id="speaker-voices" hidden></div>
+      <label class="field">Say it differently
+        <textarea id="pron" rows="4" placeholder="Alzette = Al-zet&#10;Coudenberg = Cow-den-berg"></textarea>
+      </label>
+      <p class="fine">One per line, <em>word = how it should be said</em>. Only affects the phone voice. To fix how the natural voices say a name, ask Claude: that change is made once in the repository and the audio is remade for every device.</p>
+      <button class="ghost wide" id="test-voice" type="button">Test this voice</button>
+    </div>
     <h3 class="sec">GitHub key (optional)</h3>
     <p class="fine">Lets this phone delete episodes from GitHub. The key stays on this phone only. On github.com open Settings, Developer settings, Fine-grained tokens. Choose <em>Only select repositories</em> and pick travel-podcasts. Under Repository permissions set <em>Contents</em> to <em>Read and write</em>. Pick a short expiry.</p>
     <label class="field">Key

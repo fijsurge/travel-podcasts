@@ -332,6 +332,8 @@
     if (tab === 'episodes') renderEpisodes(); else renderPlaylists();
   }
 
+  function syncPhoneBox() { const b = $('phone-box'); if (b) b.hidden = engine() === 'natural'; }
+
   function askName(title, initial, cb) {
     $('name-title').textContent = title;
     $('name-input').value = initial || '';
@@ -1091,14 +1093,14 @@
 
     // settings
     $('settings-btn').addEventListener('click', () => {
-      $('engine').value = engine();
+      $('engine').value = engine(); syncPhoneBox();
       $('wake').checked = !!settings.wake; $('autonext').checked = !!settings.autonext; $('pron').value = settings.pron || '';
       $('gh-token').value = ghToken(); $('gh-status').textContent = ghToken() ? 'Key saved on this phone.' : 'No key saved. Deleting from GitHub is switched off.';
       loadVoices(); renderSpeakerVoices(); $('dlg-settings').showModal();
     });
     $('gh-check').addEventListener('click', () => { store.set('tp.gh', { token: $('gh-token').value.trim() }); checkGh(); });
     $('engine').addEventListener('change', (e) => {
-      settings.engine = e.target.value; settings.engineChosen = true; saveSettings();
+      settings.engine = e.target.value; settings.engineChosen = true; saveSettings(); syncPhoneBox();
       if (ep) gotoChapter(chIdx, false, idx); // reload this part with the chosen voice source
     });
     $('voice').addEventListener('change', (e) => { settings.voiceURI = e.target.value; saveSettings(); });
