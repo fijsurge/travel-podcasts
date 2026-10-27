@@ -35,3 +35,13 @@ blurb: One sentence for the library card.
 ```
 
 Write for the ear: spoken prose, no tables or footnotes, years placed where they sound natural.
+
+## What the buttons do
+
+| Button | Where it acts | Reversible |
+| --- | --- | --- |
+| Hide on this phone | Only this phone's list | Yes ("Show hidden episodes") |
+| Delete from this phone | Episodes you pasted in yourself | No |
+| Delete from GitHub | Deletes `episodes/<id>.md`; the audio job then removes its audio and republishes | Claude can restore it from git history |
+
+"Delete from GitHub" needs a fine-grained token (this repo only, Contents: Read and write) saved in Settings. It is kept in that phone's browser only and is never committed.

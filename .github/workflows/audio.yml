@@ -96,7 +96,7 @@ jobs:
 
   publish:
     needs: [plan, synth]
-    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.count != '0' }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -104,6 +104,7 @@ jobs:
         with:
           python-version: '3.12'
       - uses: actions/download-artifact@v4
+        continue-on-error: true  # nothing to download when an episode was only deleted
         with:
           pattern: audio-*
           path: incoming

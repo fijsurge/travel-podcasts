@@ -154,6 +154,13 @@
     </label>
     <p class="fine">One per line, <em>word = how it should be said</em>. Only changes the spoken audio, never the text on screen.</p>
     <button class="ghost wide" id="test-voice" type="button">Test this voice</button>
+    <h3 class="sec">GitHub key (optional)</h3>
+    <p class="fine">Lets this phone delete episodes from GitHub. The key stays on this phone only. On github.com open Settings, Developer settings, Fine-grained tokens. Choose <em>Only select repositories</em> and pick travel-podcasts. Under Repository permissions set <em>Contents</em> to <em>Read and write</em>. Pick a short expiry.</p>
+    <label class="field">Key
+      <input id="gh-token" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="github_pat_...">
+    </label>
+    <button class="ghost wide" id="gh-check" type="button">Save and check</button>
+    <p class="fine" id="gh-status" role="status"></p>
     <button class="primary wide" value="close">Done</button>
   </form>
 </dialog>

@@ -215,8 +215,8 @@
     }
     await refreshOffline(); renderLibrary();
   }
-  async function removeOffline(e) {
-    if (!confirm('Remove the saved audio for "' + e.title + '" from this phone?')) return;
+  async function removeOffline(e, silent) {
+    if (!silent && !confirm('Remove the saved audio for "' + e.title + '" from this phone?')) return;
     try {
       const cache = await caches.open(AUDIO_CACHE);
       const prefix = new URL('audio/' + encodeURIComponent(e.id) + '/', location.href).href;
@@ -302,7 +302,7 @@
     const hid = library.filter((e) => hidden.includes(e.id));
     const btn = $('show-hidden');
     btn.hidden = !hid.length;
-    btn.textContent = showHidden ? 'Hide the removed episodes' : `Show ${hid.length} removed episode${hid.length === 1 ? '' : 's'}`;
+    btn.textContent = showHidden ? 'Stop showing hidden episodes' : `Show ${hid.length} hidden episode${hid.length === 1 ? '' : 's'}`;
     if (showHidden) hid.forEach((e) => ul.append(buildCard(e, true)));
   }
 
@@ -351,22 +351,91 @@
     loadLibrary().then(renderLibrary);
   }
 
+  // ---- GitHub access (token lives only in this phone's browser) ----
+  const GH_REPO = 'fijsurge/travel-podcasts';
+  const GH_API = 'https://api.github.com';
+  const ghToken = () => (store.get('tp.gh', {}).token || '').trim();
+  async function ghFetch(path, opts) {
+    const o = opts || {};
+    const res = await fetch(GH_API + path, {
+      method: o.method || 'GET',
+      headers: Object.assign({
+        'Authorization': 'Bearer ' + ghToken(),
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      }, o.body ? { 'Content-Type': 'application/json' } : {}),
+      body: o.body ? JSON.stringify(o.body) : undefined,
+    });
+    let data = null;
+    try { data = await res.json(); } catch (err) { /* empty body */ }
+    return { ok: res.ok, status: res.status, data };
+  }
+  function ghProblem(r) {
+    if (r.status === 401) return 'GitHub did not accept the key. It may have expired or been mistyped.';
+    if (r.status === 403 || r.status === 404) return 'The key cannot change this repository. It needs "Contents: Read and write" for ' + GH_REPO + '.';
+    return 'GitHub said: ' + ((r.data && r.data.message) || r.status);
+  }
+  async function checkGh() {
+    const out = $('gh-status');
+    if (!ghToken()) { out.textContent = 'No key saved. Deleting from GitHub is switched off.'; return; }
+    out.textContent = 'Checking\u2026';
+    try {
+      const r = await ghFetch('/repos/' + GH_REPO);
+      if (!r.ok) { out.textContent = ghProblem(r); return; }
+      const perms = r.data && r.data.permissions;
+      out.textContent = perms && perms.push === false
+        ? 'The key works but can only read ' + GH_REPO + '. Make a new one with Contents: Read and write.'
+        : 'Connected. This phone can change ' + GH_REPO + '.';
+    } catch (err) { out.textContent = 'Could not reach GitHub. Check your connection.'; }
+  }
+
+  async function deleteFromGitHub(e) {
+    if (!ghToken()) { showToast('Add your GitHub key in Settings first.'); $('settings-btn').click(); return; }
+    if (!confirm('Delete "' + e.title + '" from GitHub?\n\n' +
+      '\u2022 It disappears for every device within a few minutes.\n' +
+      '\u2022 Its audio is deleted from the site, which frees the space.\n' +
+      '\u2022 GitHub keeps the old version in its history, so Claude can restore it if needed.\n\n' +
+      'This is not the same as hiding it on this phone.')) return;
+    showToast('Deleting from GitHub\u2026');
+    const path = '/repos/' + GH_REPO + '/contents/episodes/' + encodeURIComponent(e.id) + '.md';
+    try {
+      const cur = await ghFetch(path + '?ref=main');
+      if (cur.status === 404) { showToast('It is already gone from GitHub.'); }
+      else if (!cur.ok) { showToast(ghProblem(cur)); return; }
+      else {
+        const del = await ghFetch(path, { method: 'DELETE', body: { message: 'Delete episode ' + e.id + ' (from the app)', sha: cur.data.sha, branch: 'main' } });
+        if (!del.ok) { showToast(ghProblem(del)); return; }
+        showToast('Deleted. The site updates in a few minutes.');
+      }
+    } catch (err) { showToast('Could not reach GitHub. Nothing was deleted.'); return; }
+    // tidy this phone straight away so it does not wait for the site to rebuild
+    if (!hidden.includes(e.id)) { hidden.push(e.id); saveHidden(); }
+    delete progress[e.id]; saveProgress();
+    playlists.forEach((p) => { p.items = p.items.filter((id) => id !== e.id); }); savePlaylists();
+    try { await removeOffline(e, true); } catch (err) { /* nothing saved */ }
+    renderLibrary();
+  }
+
   function openEpOptions(e) {
     $('ep-opts-title').textContent = e.title;
     const box = $('ep-opts');
     box.textContent = '';
-    const add = (label, fn, cls) => {
+    const add = (label, hint, fn, cls) => {
       const b = mk('button', cls || 'ghost wide', label);
       b.type = 'button';
       b.addEventListener('click', () => { $('dlg-ep').close(); fn(); });
-      box.append(b);
+      box.append(b, mk('p', 'fine opt-hint', hint));
     };
-    add('Add to a playlist', () => openPlPick(e));
-    if (e.user) add('Delete from this phone', () => removeUserEp(e), 'ghost wide danger');
-    else add('Remove from my list', () => {
-      hidden.push(e.id); saveHidden(); renderLibrary();
-      showToast('Removed. Bring it back with "Show removed episodes".');
-    }, 'ghost wide danger');
+    add('Add to a playlist', 'Group episodes for a trip. Only on this phone.', () => openPlPick(e));
+    if (e.user) {
+      add('Delete from this phone', 'You added this one yourself. It is not on GitHub, so this deletes it for good.', () => removeUserEp(e), 'ghost wide danger');
+    } else {
+      add('Hide on this phone', 'Only hides it here. Nothing changes on GitHub and you can bring it back.', () => {
+        hidden.push(e.id); saveHidden(); renderLibrary();
+        showToast('Hidden. Bring it back with "Show hidden episodes".');
+      });
+      add('Delete from GitHub\u2026', 'Removes it for every device and frees its audio on the site. Needs your GitHub key in Settings.', () => deleteFromGitHub(e), 'ghost wide danger');
+    }
     $('dlg-ep').showModal();
   }
 
@@ -985,8 +1054,10 @@
     $('settings-btn').addEventListener('click', () => {
       $('engine').value = settings.engine || 'auto';
       $('wake').checked = !!settings.wake; $('autonext').checked = !!settings.autonext; $('pron').value = settings.pron || '';
+      $('gh-token').value = ghToken(); $('gh-status').textContent = ghToken() ? 'Key saved on this phone.' : 'No key saved. Deleting from GitHub is switched off.';
       loadVoices(); renderSpeakerVoices(); $('dlg-settings').showModal();
     });
+    $('gh-check').addEventListener('click', () => { store.set('tp.gh', { token: $('gh-token').value.trim() }); checkGh(); });
     $('engine').addEventListener('change', (e) => {
       settings.engine = e.target.value; saveSettings();
       if (ep) gotoChapter(chIdx, false, idx); // reload this part with the chosen voice source

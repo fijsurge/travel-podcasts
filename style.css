@@ -210,3 +210,6 @@ code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: .
 .row-title small { font: 400 .8rem var(--sans); color: var(--muted); }
 .row .icon-btn:disabled { opacity: .3; }
 .row-actions { display: flex; gap: 8px; justify-content: space-between; }
+
+.opt-hint { margin: -2px 2px 12px; }
+.sec { margin: 22px 0 0; font-size: 1rem; }
