@@ -572,7 +572,7 @@
     });
   }
 
-  function buildTile(e) {
+  function buildTile(e, note) {
     const li = mk('li', 'tile');
     const b = mk('button', '', '');
     b.type = 'button';
@@ -580,10 +580,93 @@
     wrap.append(coverEl(e));
     const badge = audioBadge(e); if (badge) wrap.append(badge);
     const fam = family(e);
-    b.append(wrap, mk('span', 't-title', e.title), mk('span', 't-meta', `${e.minutes} min · ${variantOf(e)}${fam.length > 1 ? ' · 2 versions' : ''}`));
+    b.append(wrap, mk('span', 't-title', e.title), mk('span', 't-meta', `${e.minutes} min · ${variantOf(e)}${fam.length > 1 ? ' · 2 versions' : ''}${note ? ' · ' + note : ''}`));
     b.addEventListener('click', () => { location.hash = '#/e/' + encodeURIComponent(e.id); });
     li.append(b);
     return li;
+  }
+
+  /* ---------- near you: uses the phone's location, only on the phone; nothing is sent anywhere ---------- */
+  const PLACES = { brussels: [50.8467, 4.3525], luxembourg: [49.6116, 6.1319], bruges: [51.2093, 3.2247], ghent: [51.0543, 3.7174], antwerp: [51.2194, 4.4025] };
+  const GEO_STOPS = { 'brussels-walk-lower-town': [[50.84497, 4.34992], [50.84673, 4.35247], [50.84836, 4.35519], [50.84812, 4.35003], [50.84877, 4.34701]] };
+  let here = null, nearErr = '', locating = false;
+  const nearOn = () => store.get('tp.near', false) === true;
+  const placeCentre = (e) => (e.lat != null && e.lon != null ? [+e.lat, +e.lon] : PLACES[fold(e.place || '')] || null);
+  function stopsOf(e) {
+    const pts = e.stops && e.stops.length ? e.stops : GEO_STOPS[e.id];
+    if (!pts) return [];
+    const chs = e.chapters.map((c, i) => (/^(stop|chapter)\s*\d+/i.test(c.label) ? i : -1)).filter((i) => i >= 0);
+    return pts.slice(0, chs.length).map((pt, k) => ({ lat: pt[0], lon: pt[1], ch: chs[k] }));
+  }
+  function metres(a, b, c, d) {
+    const R = 6371000, rad = Math.PI / 180, dLat = (c - a) * rad, dLon = (d - b) * rad;
+    const x = Math.sin(dLat / 2) ** 2 + Math.cos(a * rad) * Math.cos(c * rad) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(x));
+  }
+  const fmtDist = (m) => (m < 950 ? Math.max(10, Math.round(m / 10) * 10) + ' m' : m < 10000 ? (m / 1000).toFixed(1) + ' km' : Math.round(m / 1000) + ' km');
+  function locate() {
+    locating = true;
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) { nearErr = 'unavailable'; locating = false; resolve(); return; }
+      navigator.geolocation.getCurrentPosition((pos) => {
+        here = { lat: pos.coords.latitude, lon: pos.coords.longitude, at: Date.now() }; nearErr = ''; locating = false; resolve();
+      }, (err) => {
+        nearErr = err && err.code === 1 ? 'blocked' : 'unavailable'; locating = false; resolve();
+      }, { enableHighAccuracy: false, timeout: 12000, maximumAge: 120000 });
+    });
+  }
+  function renderNear(box) {
+    const sec = mk('section', 'shelf near', '');
+    box.append(sec);
+    sec.append(mk('h2', '', 'Near you'));
+    const retry = (label) => { const b = mk('button', 'ghost small', label); b.type = 'button'; b.addEventListener('click', () => { nearErr = ''; store.set('tp.near', true); locate().then(renderLibrary); renderLibrary(); }); sec.append(b); };
+    if (!nearOn()) {
+      sec.append(mk('p', 'sub', 'Finds episodes for the place you are in, and the tour stop you are standing at. Your location stays on this phone.'));
+      retry('Use my location');
+      return;
+    }
+    if (nearErr) {
+      sec.append(mk('p', 'sub', nearErr === 'blocked' ? 'Location is blocked for this app. Allow it in Chrome\u2019s site settings, then try again.' : 'Could not find your location. Check that location is on, then try again.'));
+      retry('Try again');
+      return;
+    }
+    if (!here || Date.now() - here.at > 120000) {
+      sec.append(mk('p', 'sub', here ? 'Updating\u2026' : 'Finding where you are\u2026'));
+      if (!locating) locate().then(renderLibrary);
+      if (!here) return;
+    }
+    const eps = library.filter((x) => !hidden.includes(x.id) && isPrimary(x));
+    // 1. a tour stop within walking distance
+    const stops = [];
+    eps.forEach((x) => stopsOf(x).forEach((st, k) => { const d = metres(here.lat, here.lon, st.lat, st.lon); if (d < 300) stops.push({ e: x, st, k, d }); }));
+    stops.sort((a, b) => a.d - b.d);
+    if (stops.length) {
+      sec.append(mk('p', 'sub', 'You are close to a stop on a walking tour.'));
+      const list = mk('div', 'cont', '');
+      stops.slice(0, 2).forEach(({ e: x, st, k, d }) => {
+        const c = mk('button', 'cont-card', ''); c.type = 'button';
+        const t = mk('span', '', '');
+        t.append(mk('span', 'c-title', x.chapters[st.ch].label), mk('div', 'c-sub', `${x.title} \u00b7 ${fmtDist(d)} away \u00b7 Listen from here`));
+        c.append(coverEl(x), t);
+        c.addEventListener('click', () => { location.hash = '#/e/' + encodeURIComponent(x.id) + '?ch=' + st.ch + '&play=1'; });
+        list.append(c);
+      });
+      sec.append(list);
+    }
+    // 2. episodes for the place you are in
+    const dist = eps.map((x) => { const c = placeCentre(x); return c ? { e: x, d: metres(here.lat, here.lon, c[0], c[1]) } : null; }).filter(Boolean).sort((a, b) => a.d - b.d);
+    const close = dist.filter((x) => x.d < 40000);
+    if (close.length) {
+      if (!stops.length) sec.append(mk('p', 'sub', 'About ' + fmtDist(close[0].d) + ' from the centre of ' + close[0].e.place + '.'));
+      const ul = mk('ul', 'tiles', '');
+      close.forEach(({ e: x }) => ul.append(buildTile(x)));
+      sec.append(ul);
+    } else if (!stops.length) {
+      sec.append(mk('p', 'sub', dist.length ? `Nothing for where you are yet. The closest is ${dist[0].e.place}, ${fmtDist(dist[0].d)} away. Ask for one in the Create tab.` : 'No episode has a location yet.'));
+    }
+    const off = mk('button', 'linkish', 'Turn off location'); off.type = 'button';
+    off.addEventListener('click', () => { store.set('tp.near', false); here = null; renderLibrary(); });
+    sec.append(off);
   }
 
   function renderHome() {
@@ -598,6 +681,7 @@
       box.append(em);
       return;
     }
+    renderNear(box);
     const shelf = (title, sub) => { const s = mk('section', 'shelf', ''); s.append(mk('h2', '', title)); if (sub) s.append(mk('p', 'sub', sub)); box.append(s); return s; };
     const cont = shown.filter((x) => { const p = percent(x); return p > 0 && p < 100; })
       .sort((a, b) => ((progress[b.id] || {}).t || 0) - ((progress[a.id] || {}).t || 0)).slice(0, 3);

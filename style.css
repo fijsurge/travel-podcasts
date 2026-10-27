@@ -395,3 +395,4 @@ body.v-player .toast { bottom: calc(env(safe-area-inset-bottom) + 190px); }
 .results .lede { margin: 8px 2px; }
 #cr-out { margin-top: 12px; font-family: ui-monospace, Menlo, monospace; font-size: .8rem; }
 #queue-open { margin: 6px 0 10px; }
+.shelf.near .linkish { margin: 4px 0 0; padding: 4px 0; text-align: left; }
