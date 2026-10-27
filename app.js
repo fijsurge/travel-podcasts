@@ -226,6 +226,181 @@
     await refreshOffline(); renderLibrary();
   }
 
+  /* ---------- audio progress: what is waiting, what is being made now, what is ready ---------- */
+  // Read from GitHub's public Actions data (no key needed; a saved key just raises the request limit).
+  const audioStatus = { known: false, active: false, runWaiting: false, publishing: false, latestFailed: false, jobs: new Map(), at: 0, sig: '' };
+  async function ghGet(path) {
+    const headers = { 'Accept': 'application/vnd.github+json' };
+    if (ghToken()) headers['Authorization'] = 'Bearer ' + ghToken();
+    const res = await fetch(GH_API + path, { headers });
+    let data = null;
+    try { data = await res.json(); } catch (err) { /* empty */ }
+    return { ok: res.ok, status: res.status, data };
+  }
+  const needsAudio = () => library.some((e) => !e.user && e.chapters.some((_c, n) => !hasAudio(e, n)));
+
+  // ready | finishing (made, being published) | making | waiting | failed | idle (nothing running for it) | unknown
+  function chapterState(e, n) {
+    if (e.user) return 'ready';
+    if (hasAudio(e, n)) return 'ready';
+    if (!audioStatus.known) return 'unknown';
+    const j = audioStatus.jobs.get(e.id + ':' + n);
+    if (j) {
+      if (j.status === 'in_progress') return 'making';
+      if (j.status === 'queued' || j.status === 'waiting' || j.status === 'pending') return 'waiting';
+      if (j.conclusion === 'success') return audioStatus.active ? 'finishing' : 'idle';
+      if (j.conclusion === 'failure' || j.conclusion === 'timed_out') return 'failed';
+    }
+    if (audioStatus.active) return 'waiting';
+    return audioStatus.latestFailed ? 'failed' : 'idle';
+  }
+  const STATE_TEXT = { making: 'being made now', finishing: 'made, publishing', waiting: 'waiting in line', failed: 'hit a problem', idle: 'not started', unknown: 'being made' };
+
+  function episodeAudioSummary(e) {
+    const c = { ready: 0, finishing: 0, making: 0, waiting: 0, failed: 0, idle: 0, unknown: 0 };
+    e.chapters.forEach((_ch, n) => { c[chapterState(e, n)]++; });
+    const total = e.chapters.length, done = c.ready + c.finishing;
+    if (c.making) return { kind: 'making', text: `Being made now · ${done} of ${total} parts ready` };
+    if (c.waiting) return { kind: 'waiting', text: `Waiting in line · ${done} of ${total} parts ready` };
+    if (c.finishing) return { kind: 'making', text: 'Almost ready, publishing…' };
+    if (c.failed) return { kind: 'failed', text: `Audio hit a problem · ${done} of ${total} parts ready` };
+    if (c.idle) return { kind: 'idle', text: `Audio not started · ${done} of ${total} parts ready` };
+    return { kind: 'unknown', text: 'Checking audio…' };
+  }
+  function statusPill(e) {
+    const sm = episodeAudioSummary(e);
+    const p = mk('div', 'pill ' + sm.kind, '');
+    p.append(mk('span', 'dot', ''), document.createTextNode(sm.text));
+    return p;
+  }
+
+  function audioSignature() {
+    return library.filter((e) => !e.user).map((e) => e.id + ':' + e.chapters.map((_c, n) => chapterState(e, n)[0]).join('')).join('|');
+  }
+
+  function renderAudioBanner() {
+    const box = $('audio-status');
+    if (!audioStatus.known || (!audioStatus.active && !audioStatus.latestFailed && !needsAudio())) { box.hidden = true; return; }
+    const all = [];
+    library.filter((e) => !e.user).forEach((e) => e.chapters.forEach((_c, n) => { if (!hasAudio(e, n)) all.push(chapterState(e, n)); }));
+    const count = (k) => all.filter((x) => x === k).length;
+    const making = count('making'), waiting = count('waiting'), failed = count('failed'), finishing = count('finishing');
+    const jobs = [...audioStatus.jobs.values()];
+    const total = jobs.length, finished = jobs.filter((j) => j.conclusion === 'success').length;
+    let kind, title, sub;
+    if (audioStatus.active) {
+      kind = making || audioStatus.publishing || finishing ? 'making' : 'waiting';
+      if (total) {
+        title = audioStatus.publishing ? 'Publishing the new audio…' : `Making audio: ${finished} of ${total} parts done`;
+        sub = [making && `${making} being made now`, waiting && `${waiting} waiting in line`, failed && `${failed} hit a problem`].filter(Boolean).join(' · ') || 'Almost there';
+      } else {
+        title = 'Audio job is waiting to start';
+        sub = `${all.length} part${all.length === 1 ? '' : 's'} waiting in line`;
+      }
+      box.dataset.pct = total ? Math.round((finished / total) * 100) : 0;
+    } else if (audioStatus.latestFailed || failed) {
+      kind = 'failed'; title = 'The last audio job hit a problem'; sub = 'Parts without audio stay unavailable. Ask Claude to look into it.'; box.dataset.pct = 0;
+    } else {
+      kind = 'idle'; title = 'Some parts have no audio yet'; sub = 'Nothing is running for them. Ask Claude to start it.'; box.dataset.pct = 0;
+    }
+    box.className = 'audio-status ' + kind;
+    $('as-title').textContent = title; $('as-sub').textContent = sub;
+    $('as-fill').style.width = box.dataset.pct + '%';
+    $('as-bar').hidden = kind === 'idle' || kind === 'failed';
+    box.hidden = false;
+  }
+
+  function renderAudioStatus() {
+    renderAudioBanner();
+    const sig = audioSignature();
+    if (sig !== audioStatus.sig) {
+      audioStatus.sig = sig;
+      if (view === 'library') renderLibrary();
+      if (ep && !ep.user && !hasAudio(ep, chIdx)) { const meta = $('ch-meta'); if (meta) meta.textContent = `${chIdx + 1} of ${ep.chapters.length} · audio ${STATE_TEXT[chapterState(ep, chIdx)]}`; }
+    }
+  }
+
+  function openAudioDetails() {
+    const box = $('as-list'); box.textContent = '';
+    library.filter((e) => !e.user).forEach((e) => {
+      const sm = episodeAudioSummary(e);
+      const h = mk('h3', '', e.title); box.append(h);
+      const ul = mk('ul', 'as-rows', '');
+      e.chapters.forEach((c, n) => {
+        const st = chapterState(e, n);
+        const li = mk('li', 'as-row ' + (st === 'ready' ? 'ready' : st), '');
+        li.append(mk('span', 'dot', ''), mk('span', 'as-label', c.label), mk('small', '', st === 'ready' ? 'ready' : STATE_TEXT[st]));
+        ul.append(li);
+      });
+      box.append(ul);
+    });
+    const when = audioStatus.at ? new Date(audioStatus.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'not yet';
+    $('as-updated').textContent = 'Last checked ' + when + '. This page checks again by itself.';
+    $('dlg-audio').showModal();
+  }
+
+  async function pollAudioStatus() {
+    const wasActive = audioStatus.active;
+    try {
+      const r = await ghGet('/repos/' + GH_REPO + '/actions/workflows/audio.yml/runs?per_page=5');
+      if (!r.ok) throw new Error('http ' + r.status);
+      const runs = (r.data && r.data.workflow_runs) || [];
+      const active = runs.filter((x) => x.status !== 'completed');
+      const running = active.find((x) => x.status === 'in_progress');
+      audioStatus.active = active.length > 0;
+      audioStatus.latestFailed = !!runs[0] && runs[0].status === 'completed' && runs[0].conclusion === 'failure';
+      audioStatus.jobs = new Map(); audioStatus.publishing = false;
+      if (running) {
+        let page = 1, got = 0, totalCount = 0;
+        do {
+          const jr = await ghGet('/repos/' + GH_REPO + '/actions/runs/' + running.id + '/jobs?per_page=100&page=' + page);
+          if (!jr.ok) break;
+          totalCount = jr.data.total_count || 0;
+          (jr.data.jobs || []).forEach((j) => {
+            got++;
+            const m = /^synth \((.+), (\d+)\)$/.exec(j.name);
+            if (m) audioStatus.jobs.set(m[1] + ':' + m[2], { status: j.status, conclusion: j.conclusion });
+            else if (j.name === 'publish' && j.status === 'in_progress') audioStatus.publishing = true;
+          });
+          page++;
+        } while (got < totalCount && page < 4);
+      }
+      audioStatus.known = true; audioStatus.at = Date.now();
+    } catch (err) { /* offline or rate limited: keep what we know */ }
+    if (wasActive && !audioStatus.active) audioStatus.fastUntil = Date.now() + 6 * 60 * 1000;
+    renderAudioStatus();
+  }
+
+  async function refreshLibrary() {
+    if (playing) return false;
+    const before = ep ? ep.chapters[chIdx] && ep.chapters[chIdx].hash : null;
+    await loadLibrary();
+    if (ep) {
+      const f = library.find((x) => x.id === ep.id);
+      if (f) { ep = f; if (ep.chapters[chIdx] && ep.chapters[chIdx].hash !== before) await gotoChapter(chIdx, false, idx); }
+    }
+    audioStatus.sig = '';
+    renderAudioStatus(); if (view === 'library') renderLibrary();
+    return true;
+  }
+
+  let audioTimer = null;
+  function scheduleAudioPoll(delay) {
+    clearTimeout(audioTimer);
+    audioTimer = setTimeout(async () => {
+      if (document.visibilityState === 'visible') {
+        await pollAudioStatus();
+        if (!audioStatus.active && needsAudio()) await refreshLibrary(); // run finished: pick up the new files
+      }
+      const fast = audioStatus.active || (audioStatus.fastUntil && Date.now() < audioStatus.fastUntil);
+      if (needsAudio() || audioStatus.active) scheduleAudioPoll(fast ? 30000 : 300000);
+    }, delay);
+  }
+  function startAudioWatch() {
+    if (!needsAudio()) return;
+    pollAudioStatus().then(() => scheduleAudioPoll(audioStatus.active ? 30000 : 300000));
+  }
+
   /* ---------- organizing: remove/hide, place filter, playlists ---------- */
   let hidden = store.get('tp.hidden', []);
   let playlists = store.get('tp.playlists', []);
@@ -248,8 +423,9 @@
     li.append(mk('h2', '', e.title));
     if (e.blurb) li.append(mk('p', '', e.blurb));
     const ac = audioCount(e);
-    const audioNote = ac === e.chapters.length ? ' · natural voice' : ac ? ` · natural voice for ${ac} of ${e.chapters.length} parts` : (naturalOnly(e) ? ' · audio is being made' : '');
+    const audioNote = ac === e.chapters.length ? ' · natural voice' : ac ? ` · natural voice for ${ac} of ${e.chapters.length} parts` : '';
     li.append(mk('div', 'meta', `${e.chapters.length} parts · about ${e.minutes} min${audioNote}${pct ? ' · ' + (pct >= 100 ? 'finished' : pct + '% heard') : ''}`));
+    if (!removed && !e.user && ac < e.chapters.length) li.append(statusPill(e));
     if (!removed && pct > 0 && pct < 100) {
       const bar = mk('div', 'progress', ''); const fill = document.createElement('div'); fill.style.width = pct + '%'; bar.append(fill); li.append(bar);
     }
@@ -638,7 +814,7 @@
   function unlockScreen() { if (wl) { wl.release().catch(() => {}); wl = null; } }
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && playing) lockScreen();
-    if (document.visibilityState === 'visible') { if (updatePending && !playing) location.reload(); else checkForUpdate(); }
+    if (document.visibilityState === 'visible') { if (updatePending && !playing) location.reload(); else checkForUpdate(); if (needsAudio() || audioStatus.active) scheduleAudioPoll(500); }
   });
 
   function showToast(msg) {
@@ -824,7 +1000,7 @@
       if (curBlobUrl) { URL.revokeObjectURL(curBlobUrl); curBlobUrl = null; }
     }
     $('ch-label').textContent = ch.label;
-    $('ch-meta').textContent = `${chIdx + 1} of ${ep.chapters.length} · ${mode === 'audio' ? 'natural voice' : naturalOnly(ep) ? 'audio is being made' : 'phone voice'}`;
+    $('ch-meta').textContent = `${chIdx + 1} of ${ep.chapters.length} · ${mode === 'audio' ? 'natural voice' : naturalOnly(ep) ? 'audio ' + STATE_TEXT[chapterState(ep, chIdx)] : 'phone voice'}`;
     const src = $('sources');
     if (chIdx === ep.chapters.length - 1 && ep.sources.length) {
       src.textContent = '';
@@ -949,7 +1125,7 @@
     }
     if (naturalOnly(ep)) {
       playing = false; setPlayingUi();
-      showToast('Natural audio for this part is still being made, so it is not available yet. Choose "Always use my phone\'s voice" in Settings to listen now.');
+      showToast('Audio for this part is ' + STATE_TEXT[chapterState(ep, chIdx)] + '. Choose "Always use my phone\'s voice" in Settings to listen now.');
       return;
     }
     if (!play.warned) { play.warned = true; showToast('This part uses your phone voice, which stops when you leave the app. Natural audio is still being made for it.'); }
@@ -1114,6 +1290,7 @@
       const t = document.createElement('span'); t.textContent = c.label;
       const sm = document.createElement('small'); sm.textContent = '~' + Math.max(1, Math.round(words / WPM)) + ' min';
       b.append(t, sm);
+      if (!ep.user && !hasAudio(ep, i)) b.append(mk('small', 'st-' + chapterState(ep, i), ' \u00b7 audio ' + STATE_TEXT[chapterState(ep, i)]));
       b.addEventListener('click', () => { $('dlg-chapters').close(); gotoChapter(i, playing); });
       li.append(b); ol.append(li);
     });
@@ -1144,6 +1321,7 @@
 
   function wire() {
     $('back').addEventListener('click', () => { location.hash = view === 'player' && ep && curPl ? '#/p/' + encodeURIComponent(curPl) : ''; });
+    $('as-details').addEventListener('click', openAudioDetails);
     $('mini-open').addEventListener('click', () => { if (ep) location.hash = '#/e/' + encodeURIComponent(ep.id) + (curPl ? '?pl=' + encodeURIComponent(curPl) : ''); });
     $('mini-play').addEventListener('click', () => toggle());
     $('mini-next').addEventListener('click', () => { if (ep && chIdx + 1 < ep.chapters.length) gotoChapter(chIdx + 1, playing); });
@@ -1243,6 +1421,7 @@
     window.addEventListener('hashchange', route);
     route();
     checkForUpdate();
+    startAudioWatch();
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* optional */ }
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   }

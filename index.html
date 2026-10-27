@@ -29,6 +29,11 @@
   <!-- Library -->
   <section id="view-library" class="view">
     <p class="lede" id="lede">Episodes are read aloud by natural voices (or your phone's own). Pick one and press play.</p>
+    <div class="audio-status" id="audio-status" hidden>
+      <div class="as-top"><span class="dot"></span><div class="as-text"><strong id="as-title"></strong><span id="as-sub"></span></div>
+        <button class="ghost small" id="as-details" type="button">Details</button></div>
+      <div class="as-bar" id="as-bar"><div id="as-fill"></div></div>
+    </div>
     <div class="tabs" id="tabs" role="group" aria-label="Library">
       <button type="button" data-tab="episodes">Episodes</button>
       <button type="button" data-tab="playlists">Playlists</button>
@@ -145,6 +150,17 @@
     <h2>Chapters</h2>
     <ol id="ch-list" class="ch-list"></ol>
     <button class="ghost wide" value="close">Close</button>
+  </form>
+</dialog>
+
+<!-- Audio progress details -->
+<dialog id="dlg-audio">
+  <form method="dialog" class="sheet">
+    <h2>Audio progress</h2>
+    <div id="as-list"></div>
+    <p class="fine" id="as-updated"></p>
+    <p class="fine"><span class="legend ready"></span>ready <span class="legend making"></span>being made now <span class="legend waiting"></span>waiting in line <span class="legend failed"></span>problem</p>
+    <button class="primary wide" value="close">Close</button>
   </form>
 </dialog>
 
