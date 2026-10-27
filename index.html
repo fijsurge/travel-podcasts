@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Travel Podcasts</title>
+<meta name="description" content="Narrated history episodes, read aloud by your phone's own voices.">
+<meta name="theme-color" content="#1d3a5f" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1720" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top" id="top">
+  <button class="icon-btn" id="back" aria-label="Back to library" hidden>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+  </button>
+  <h1 id="title">Travel Podcasts</h1>
+  <button class="icon-btn" id="settings-btn" aria-label="Settings">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3h0a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5h0a1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9v0a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
+  </button>
+</header>
+
+<main id="main">
+  <!-- Library -->
+  <section id="view-library" class="view">
+    <p class="lede" id="lede">Episodes are read aloud by your phone's own voices. Pick one and press play.</p>
+    <ul class="cards" id="cards"></ul>
+    <button class="ghost wide" id="add-btn">＋ Add an episode</button>
+    <p class="fine" id="support-note" hidden></p>
+  </section>
+
+  <!-- Player -->
+  <section id="view-player" class="view" hidden>
+    <div class="ch-head">
+      <button class="chip" id="chapters-btn" aria-haspopup="dialog">
+        <span id="ch-label">Chapter</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <span class="ch-meta" id="ch-meta"></span>
+    </div>
+    <div class="bar"><div class="bar-fill" id="bar-fill"></div></div>
+    <article id="reader" class="reader" aria-live="off"></article>
+    <aside id="sources" class="sources" hidden></aside>
+  </section>
+</main>
+
+<!-- Transport (player only) -->
+<footer class="transport" id="transport" hidden>
+  <div class="row speeds" id="speeds" role="group" aria-label="Speed"></div>
+  <div class="row buttons">
+    <button class="t-btn" id="prev-ch" aria-label="Previous chapter">
+      <svg viewBox="0 0 24 24"><path d="M6 5v14M18 5l-9 7 9 7z"/></svg>
+    </button>
+    <button class="t-btn" id="back-s" aria-label="Back three sentences">
+      <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 109-9M3 4v5h5"/></svg><small>3</small>
+    </button>
+    <button class="t-btn play" id="play" aria-label="Play">
+      <svg id="ico-play" viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></svg>
+      <svg id="ico-pause" viewBox="0 0 24 24" hidden><path d="M8 5v14M16 5v14"/></svg>
+    </button>
+    <button class="t-btn" id="fwd-s" aria-label="Forward three sentences">
+      <svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-9-9M21 4v5h-5"/></svg><small>3</small>
+    </button>
+    <button class="t-btn" id="next-ch" aria-label="Next chapter">
+      <svg viewBox="0 0 24 24"><path d="M18 5v14M6 5l9 7-9 7z"/></svg>
+    </button>
+  </div>
+</footer>
+
+<!-- Chapter list -->
+<dialog id="dlg-chapters">
+  <form method="dialog" class="sheet">
+    <h2>Chapters</h2>
+    <ol id="ch-list" class="ch-list"></ol>
+    <button class="ghost wide" value="close">Close</button>
+  </form>
+</dialog>
+
+<!-- Settings -->
+<dialog id="dlg-settings">
+  <form method="dialog" class="sheet">
+    <h2>Settings</h2>
+    <label class="field">Voice
+      <select id="voice"></select>
+    </label>
+    <p class="fine" id="voice-hint">Better voices are usually under your phone's text-to-speech settings (for example "Google" or "Enhanced" voices). They appear here once installed.</p>
+    <label class="field check"><input type="checkbox" id="wake"> Keep the screen on while playing</label>
+    <label class="field check"><input type="checkbox" id="autonext"> Continue into the next chapter</label>
+    <label class="field">Say it differently
+      <textarea id="pron" rows="4" placeholder="Alzette = Al-zet&#10;Coudenberg = Cow-den-berg"></textarea>
+    </label>
+    <p class="fine">One per line, <em>word = how it should be said</em>. Only changes the spoken audio, never the text on screen.</p>
+    <button class="ghost wide" id="test-voice" type="button">Test this voice</button>
+    <button class="primary wide" value="close">Done</button>
+  </form>
+</dialog>
+
+<!-- Add episode -->
+<dialog id="dlg-add">
+  <form method="dialog" class="sheet" id="add-form">
+    <h2>Add an episode</h2>
+    <p class="fine">Paste an episode in markdown (title line, then <code>## Welcome</code> and <code>## Chapter …</code> sections), or choose a .md file. Episodes added here stay on this phone. To keep one on every device, ask Claude to add it to the repository.</p>
+    <label class="field">Title
+      <input id="add-title" type="text" placeholder="The Story of Bruges">
+    </label>
+    <label class="field">Markdown file
+      <input id="add-file" type="file" accept=".md,.markdown,.txt,text/markdown,text/plain">
+    </label>
+    <label class="field">Or paste the text
+      <textarea id="add-text" rows="7"></textarea>
+    </label>
+    <p class="error" id="add-err" role="alert" hidden></p>
+    <button class="primary wide" id="add-save" type="button">Save episode</button>
+    <button class="ghost wide" value="close">Cancel</button>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>
