@@ -23,9 +23,10 @@
   };
 
   const settings = Object.assign(
-    { rate: 1, voiceURI: '', wake: true, autonext: true, pron: '', speakerVoices: {}, engine: 'auto' },
+    { rate: 1, voiceURI: '', wake: true, autonext: true, pron: '', speakerVoices: {}, engine: 'natural' },
     store.get('tp.settings', {})
   );
+  if (settings.engine === 'auto' && !settings.engineChosen) settings.engine = 'natural'; // 'auto' was only ever the old default
   const saveSettings = () => store.set('tp.settings', settings);
   let progress = store.get('tp.progress', {}); // { [episodeId]: { ch, u } }
   const saveProgress = () => store.set('tp.progress', progress);
@@ -246,7 +247,7 @@
     li.append(mk('h2', '', e.title));
     if (e.blurb) li.append(mk('p', '', e.blurb));
     const ac = audioCount(e);
-    const audioNote = ac === e.chapters.length ? ' · natural voice' : ac ? ` · natural voice for ${ac} of ${e.chapters.length} parts` : '';
+    const audioNote = ac === e.chapters.length ? ' · natural voice' : ac ? ` · natural voice for ${ac} of ${e.chapters.length} parts` : (naturalOnly(e) ? ' · audio is being made' : '');
     li.append(mk('div', 'meta', `${e.chapters.length} parts · about ${e.minutes} min${audioNote}${pct ? ' · ' + (pct >= 100 ? 'finished' : pct + '% heard') : ''}`));
     if (!removed && pct > 0 && pct < 100) {
       const bar = mk('div', 'progress', ''); const fill = document.createElement('div'); fill.style.width = pct + '%'; bar.append(fill); li.append(bar);
@@ -652,7 +653,9 @@
     const a = audioManifest && audioManifest.episodes && audioManifest.episodes[e.id] && audioManifest.episodes[e.id].chapters[String(n)];
     return a && a.hash === e.chapters[n].hash ? a : null;
   }
-  const audioEntry = (e, n) => (settings.engine === 'phone' ? null : hasAudio(e, n));
+  const engine = () => settings.engine || 'natural'; // natural = only the generated voices; auto = fall back to the phone voice; phone = always the phone voice
+  const naturalOnly = (e) => engine() === 'natural' && !(e && e.user); // episodes you pasted in have no generated audio
+  const audioEntry = (e, n) => (engine() === 'phone' ? null : hasAudio(e, n));
   const audioCount = (e) => e.chapters.reduce((k, _c, n) => k + (hasAudio(e, n) ? 1 : 0), 0);
 
   async function fetchChapterJson(e, n) {
@@ -723,6 +726,12 @@
   audioEl.addEventListener('error', () => {
     if (mode !== 'audio' || !ep || !audioEl.getAttribute('src')) return;
     audioFailed.add(ep.id + ':' + chIdx);
+    if (naturalOnly(ep)) {
+      playing = false; switching = true; try { audioEl.pause(); } catch (e2) { /* optional */ } switching = false;
+      setPlayingUi(); unlockScreen();
+      showToast('That audio could not load. Check your connection and try again.');
+      return;
+    }
     showToast('That audio could not load, so this part uses your phone voice.');
     gotoChapter(chIdx, playing, idx);
   });
@@ -760,7 +769,7 @@
       audioEl.removeAttribute('src'); audioEl.load();
     }
     $('ch-label').textContent = ch.label;
-    $('ch-meta').textContent = `${chIdx + 1} of ${ep.chapters.length} · ${mode === 'audio' ? 'natural voice' : 'phone voice'}`;
+    $('ch-meta').textContent = `${chIdx + 1} of ${ep.chapters.length} · ${mode === 'audio' ? 'natural voice' : naturalOnly(ep) ? 'audio is being made' : 'phone voice'}`;
     const src = $('sources');
     if (chIdx === ep.chapters.length - 1 && ep.sources.length) {
       src.textContent = '';
@@ -858,6 +867,11 @@
         playing = false; setPlayingUi(); unlockScreen();
         showToast('Tap play to start.');
       });
+      return;
+    }
+    if (naturalOnly(ep)) {
+      playing = false; setPlayingUi();
+      showToast('Natural audio for this part is still being made, so it is not available yet. Choose "Always use my phone\'s voice" in Settings to listen now.');
       return;
     }
     if (!play.warned) { play.warned = true; showToast('This part uses your phone voice, which stops when you leave the app. Natural audio is still being made for it.'); }
@@ -1053,14 +1067,14 @@
 
     // settings
     $('settings-btn').addEventListener('click', () => {
-      $('engine').value = settings.engine || 'auto';
+      $('engine').value = engine();
       $('wake').checked = !!settings.wake; $('autonext').checked = !!settings.autonext; $('pron').value = settings.pron || '';
       $('gh-token').value = ghToken(); $('gh-status').textContent = ghToken() ? 'Key saved on this phone.' : 'No key saved. Deleting from GitHub is switched off.';
       loadVoices(); renderSpeakerVoices(); $('dlg-settings').showModal();
     });
     $('gh-check').addEventListener('click', () => { store.set('tp.gh', { token: $('gh-token').value.trim() }); checkGh(); });
     $('engine').addEventListener('change', (e) => {
-      settings.engine = e.target.value; saveSettings();
+      settings.engine = e.target.value; settings.engineChosen = true; saveSettings();
       if (ep) gotoChapter(chIdx, false, idx); // reload this part with the chosen voice source
     });
     $('voice').addEventListener('change', (e) => { settings.voiceURI = e.target.value; saveSettings(); });
