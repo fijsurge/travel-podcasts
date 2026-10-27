@@ -70,9 +70,20 @@ jobs:
           mkdir -p models
           curl -fL --retry 4 -o models/kokoro-v1.0.int8.onnx "$MODEL_URL/kokoro-v1.0.int8.onnx"
           curl -fL --retry 4 -o models/voices-v1.0.bin "$MODEL_URL/voices-v1.0.bin"
+      - name: Install ffmpeg (MP3 encoder)
+        run: |
+          if ! command -v ffmpeg >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq ffmpeg
+          fi
+          ffmpeg -version | head -1
       - run: pip install kokoro-onnx==0.6.1 soundfile numpy
       - name: Synthesize chapter
-        run: python tools/make_audio.py chapter "${{ matrix.episode }}" "${{ matrix.chapter }}"
+        run: |
+          python tools/make_audio.py chapter "${{ matrix.episode }}" "${{ matrix.chapter }}" 2> >(tee err.log >&2) || {
+            echo "::error title=Audio synthesis failed::$(tail -n 8 err.log | tr '\n' '|' | cut -c1-1500)"
+            exit 1
+          }
       - name: Pack result
         run: |
           nn=$(printf '%02d' "${{ matrix.chapter }}")

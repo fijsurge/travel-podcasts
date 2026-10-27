@@ -194,7 +194,11 @@ def cmd_chapter(args):
         wav = Path(tmp) / "c.wav"
         sf.write(str(wav), np.concatenate(pieces), sr)
         mp3 = outdir / f"{args.chapter:02d}.mp3"
-        subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", str(wav), "-ac", "1", "-b:a", MP3_BITRATE, str(mp3)], check=True)
+        try:
+            subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", str(wav), "-ac", "1", "-b:a", MP3_BITRATE, str(mp3)], check=True)
+        except FileNotFoundError:  # no ffmpeg: libsndfile can write MP3 itself
+            print("ffmpeg not found, encoding with libsndfile", file=sys.stderr)
+            sf.write(str(mp3), np.concatenate(pieces), sr, format="MP3")
     meta = {"hash": ch["hash"], "label": ch["label"], "duration": round(t, 2), "units": timings}
     json_path(ep["id"], args.chapter).write_text(json.dumps(meta, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"wrote {mp3} ({mp3.stat().st_size // 1024} KB, {t / 60:.1f} min)")
