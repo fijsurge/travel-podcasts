@@ -71,6 +71,22 @@
   </section>
 </main>
 
+<!-- Mini player (shown while browsing, if something is loaded) -->
+<div class="mini" id="mini" hidden>
+  <button class="mini-open" id="mini-open" type="button" aria-label="Open the player">
+    <span class="mini-title" id="mini-title"></span>
+    <span class="mini-sub" id="mini-sub"></span>
+  </button>
+  <button class="t-btn" id="mini-play" aria-label="Play">
+    <svg id="mini-ico-play" viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></svg>
+    <svg id="mini-ico-pause" viewBox="0 0 24 24" hidden><path d="M8 5v14M16 5v14"/></svg>
+  </button>
+  <button class="t-btn" id="mini-next" aria-label="Next chapter">
+    <svg viewBox="0 0 24 24"><path d="M18 5v14M6 5l9 7-9 7z"/></svg>
+  </button>
+  <div class="mini-bar"><div id="mini-fill"></div></div>
+</div>
+
 <!-- Transport (player only) -->
 <footer class="transport" id="transport" hidden>
   <div class="row speeds" id="speeds" role="group" aria-label="Speed"></div>

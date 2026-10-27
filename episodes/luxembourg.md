@@ -97,7 +97,7 @@ Ben: Every year, on the Tuesday after Pentecost, thousands of people dance throu
 
 Anna: Then we reach Charlemagne.
 
-Ben: In the late eighth and early ninth centuries, the Frankish kings became emperors, and the Echternach region sat comfortably inside their realm. But when Charlemagne's empire was split among his grandsons by the Treaty of Verdun in 843, the land that would become Luxembourg fell into the middle kingdom, named after the grandson Lothar.
+Ben: In the late eighth and early ninth centuries, the Frankish kings became emperors, and the Echternach region sat comfortably inside their realm. But when Charlemagne's empire was split among his grandsons by the Treaty of Verdun in eight forty-three, the land that would become Luxembourg fell into the middle kingdom, named after the grandson Lothar.
 
 Anna: And that didn't last.
 

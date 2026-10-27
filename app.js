@@ -243,7 +243,8 @@
   function buildCard(e, removed) {
     const li = mk('li', 'card' + (removed ? ' removed' : ''));
     const pct = percent(e);
-    li.append(mk('span', 'place', removed ? 'Removed' : e.place || (e.user ? 'Added by you' : 'Episode')));
+    const nowPlaying = !removed && ep && ep.id === e.id;
+    li.append(mk('span', 'place', removed ? 'Removed' : (e.place || (e.user ? 'Added by you' : 'Episode')) + (nowPlaying ? ' \u00b7 now ' + (playing ? 'playing' : 'open') : '')));
     li.append(mk('h2', '', e.title));
     if (e.blurb) li.append(mk('p', '', e.blurb));
     const ac = audioCount(e);
@@ -260,9 +261,9 @@
       li.append(actions);
       return li;
     }
-    const go = mk('button', 'primary', pct > 0 && pct < 100 ? 'Resume' : pct >= 100 ? 'Listen again' : 'Listen');
+    const go = mk('button', 'primary', nowPlaying ? 'Open player' : pct > 0 && pct < 100 ? 'Resume' : pct >= 100 ? 'Listen again' : 'Listen');
     go.addEventListener('click', () => {
-      if (pct >= 100) { delete progress[e.id]; saveProgress(); }
+      if (pct >= 100 && !nowPlaying) { delete progress[e.id]; saveProgress(); }
       location.hash = '#/e/' + encodeURIComponent(e.id);
     });
     actions.append(go);
@@ -348,6 +349,7 @@
 
   function removeUserEp(e) {
     if (!confirm('Delete "' + e.title + '" from this phone? This cannot be undone.')) return;
+    if (ep && ep.id === e.id) { if (playing) pause(); ep = null; updateMini(); }
     userEps = userEps.filter((x) => x.id !== e.id); store.set('tp.user', userEps);
     delete progress[e.id]; saveProgress();
     playlists.forEach((p) => { p.items = p.items.filter((id) => id !== e.id); }); savePlaylists();
@@ -601,6 +603,7 @@
   function stopKeepAlive() { try { if (keepAlive) keepAlive.pause(); } catch (e) { /* optional */ } }
 
   function updateMedia() {
+    updateMini();
     if (!('mediaSession' in navigator) || !ep) return;
     try {
       navigator.mediaSession.metadata = new MediaMetadata({
@@ -635,6 +638,7 @@
   function unlockScreen() { if (wl) { wl.release().catch(() => {}); wl = null; } }
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && playing) lockScreen();
+    if (document.visibilityState === 'visible') { if (updatePending && !playing) location.reload(); else checkForUpdate(); }
   });
 
   function showToast(msg) {
@@ -696,13 +700,28 @@
     if (!d || !isFinite(d)) return;
     try { navigator.mediaSession.setPositionState({ duration: d, playbackRate: audioEl.playbackRate || 1, position: Math.min(audioEl.currentTime, d) }); } catch (e) { /* optional */ }
   }
-  let warmEl = null;
+  // The next chapter's MP3 is downloaded into memory ahead of time, so the hand-over at the end of a chapter
+  // needs no network at all (a phone with the screen off may freeze the page the moment audio stops).
+  let nextPre = null;      // { key, url } for the chapter after this one
+  let curBlobUrl = null;   // blob URL currently loaded in the audio element
+  let loadedKey = '';      // which chapter the audio element holds
+  function dropPre() { if (nextPre && nextPre.url) URL.revokeObjectURL(nextPre.url); nextPre = null; }
+  function preloadNextAudio() {
+    if (!(ep && chIdx + 1 < ep.chapters.length && audioEntry(ep, chIdx + 1))) return;
+    const key = ep.id + ':' + (chIdx + 1);
+    if (nextPre && nextPre.key === key) return;
+    dropPre();
+    const rec = { key, url: null };
+    nextPre = rec;
+    fetch(audioUrl(ep, chIdx + 1, 'mp3'))
+      .then((r) => { if (!r.ok) throw new Error('http ' + r.status); return r.blob(); })
+      .then((blob) => { if (nextPre === rec) rec.url = URL.createObjectURL(blob); })
+      .catch(() => { if (nextPre === rec) nextPre = null; });
+  }
   function prefetchNext(warmAudio) {
     if (!(ep && chIdx + 1 < ep.chapters.length && audioEntry(ep, chIdx + 1))) return;
     fetchChapterJson(ep, chIdx + 1).catch(() => {});
-    if (warmAudio) { // start fetching the next MP3 so the hand-over has no gap
-      try { warmEl = new Audio(); warmEl.preload = 'auto'; warmEl.src = new URL(audioUrl(ep, chIdx + 1, 'mp3'), location.href).href; } catch (err) { /* optional */ }
-    }
+    if (warmAudio) preloadNextAudio();
   }
 
   // Hand over to the next chapter inside the 'ended' event itself. When the screen is off or another app is in
@@ -713,7 +732,13 @@
     if (!audioEntry(ep, n) || audioFailed.has(ep.id + ':' + n)) return false;
     const data = jsonCache.get(audioUrl(ep, n, 'json'));
     if (!data || data.hash !== ep.chapters[n].hash) return false;
-    audioEl.src = new URL(audioUrl(ep, n, 'mp3'), location.href).href;
+    const key = ep.id + ':' + n;
+    let src = new URL(audioUrl(ep, n, 'mp3'), location.href).href;
+    let blobUrl = null;
+    if (nextPre && nextPre.key === key && nextPre.url) { blobUrl = nextPre.url; src = blobUrl; nextPre = null; }
+    const oldBlob = curBlobUrl;
+    audioEl.src = src; loadedKey = key; curBlobUrl = blobUrl;
+    if (oldBlob) URL.revokeObjectURL(oldBlob);
     audioEl.playbackRate = settings.rate;
     const p = audioEl.play();
     if (p && p.catch) p.catch((err) => { if (!err || err.name !== 'AbortError') { playing = false; setPlayingUi(); unlockScreen(); showToast('Tap play to carry on.'); } });
@@ -735,8 +760,8 @@
     if (lo !== idx) { idx = lo; mark(lo, !audioEl.paused); remember(false); }
     const d = audioEl.duration;
     if (d) {
-      $('bar-fill').style.width = Math.round((t / d) * 100) + '%';
-      if (t > d * 0.8 && !warmEl) prefetchNext(true);
+      setBar(Math.round((t / d) * 100));
+      if (t > d * 0.6 && !nextPre) prefetchNext(true);
     }
     if (Date.now() - lastPos > 1000) { lastPos = Date.now(); setPosition(); }
   });
@@ -787,12 +812,16 @@
       spans.push(s);
     });
     if (mode === 'audio') {
-      const src = new URL(audioUrl(ep, chIdx, 'mp3'), location.href).href;
-      if (audioEl.src !== src) audioEl.src = src;
+      const key = ep.id + ':' + chIdx;
+      if (loadedKey !== key) {
+        audioEl.src = new URL(audioUrl(ep, chIdx, 'mp3'), location.href).href; loadedKey = key;
+        if (curBlobUrl) { URL.revokeObjectURL(curBlobUrl); curBlobUrl = null; }
+      }
       audioEl.playbackRate = settings.rate;
-      warmEl = null; prefetchNext(false);
+      prefetchNext(false);
     } else if (audioEl.getAttribute('src')) {
-      audioEl.removeAttribute('src'); audioEl.load();
+      audioEl.removeAttribute('src'); audioEl.load(); loadedKey = '';
+      if (curBlobUrl) { URL.revokeObjectURL(curBlobUrl); curBlobUrl = null; }
     }
     $('ch-label').textContent = ch.label;
     $('ch-meta').textContent = `${chIdx + 1} of ${ep.chapters.length} · ${mode === 'audio' ? 'natural voice' : naturalOnly(ep) ? 'audio is being made' : 'phone voice'}`;
@@ -815,7 +844,7 @@
       s.classList.toggle('active', j === i);
       s.classList.toggle('done', j < i);
     });
-    if (!(mode === 'audio' && audioEl.duration)) $('bar-fill').style.width = (units.length ? Math.round((i / units.length) * 100) : 0) + '%';
+    if (!(mode === 'audio' && audioEl.duration)) setBar(units.length ? Math.round((i / units.length) * 100) : 0);
     if (scroll && spans[i]) {
       const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       spans[i].scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' });
@@ -828,9 +857,32 @@
     saveProgress();
   }
 
+  /* ---------- views and the mini player (playback carries on while you browse) ---------- */
+  let view = 'library'; // 'library' | 'playlist' | 'player'
+  function setBar(pct) { $('bar-fill').style.width = pct + '%'; $('mini-fill').style.width = pct + '%'; }
+  function updateMini() {
+    const show = !!ep && view !== 'player';
+    $('mini').hidden = !show;
+    document.body.classList.toggle('has-mini', show);
+    if (!show) return;
+    $('mini-title').textContent = ep.chapters[chIdx] ? ep.chapters[chIdx].label : ep.title;
+    $('mini-sub').textContent = ep.title + (playing ? '' : ' \u00b7 paused');
+    $('mini-ico-play').toggleAttribute('hidden', playing); $('mini-ico-pause').toggleAttribute('hidden', !playing);
+    $('mini-play').setAttribute('aria-label', playing ? 'Pause' : 'Play');
+  }
+  function setView(v) {
+    view = v;
+    $('view-library').hidden = v !== 'library'; $('view-playlist').hidden = v !== 'playlist';
+    $('view-player').hidden = v !== 'player'; $('transport').hidden = v !== 'player';
+    $('back').hidden = v === 'library';
+    window.scrollTo({ top: 0 });
+    updateMini();
+  }
+
   function setPlayingUi() {
-    $('ico-play').hidden = playing;
-    $('ico-pause').hidden = !playing;
+    updateMini();
+    $('ico-play').toggleAttribute('hidden', playing);
+    $('ico-pause').toggleAttribute('hidden', !playing);
     $('play').setAttribute('aria-label', playing ? 'Pause' : 'Play');
     if ('mediaSession' in navigator) { try { navigator.mediaSession.playbackState = playing ? 'playing' : 'paused'; } catch (e) { /* optional */ } }
   }
@@ -933,7 +985,7 @@
     idx = Math.min(idx, Math.max(0, units.length - 1));
     if (mode === 'audio') seekToUnit(idx);
     mark(idx, false);
-    window.scrollTo({ top: 0 });
+    if (view === 'player') window.scrollTo({ top: 0 });
     remember(false);
     switching = false;
     if (keepPlaying) play(); else { playing = false; setPlayingUi(); }
@@ -948,7 +1000,8 @@
       const nx = nextInPlaylist();
       if (nx) {
         showToast('Next in your playlist\u2026');
-        location.hash = '#/e/' + encodeURIComponent(nx) + '?pl=' + encodeURIComponent(curPl) + '&play=1';
+        if (view === 'player') location.hash = '#/e/' + encodeURIComponent(nx) + '?pl=' + encodeURIComponent(curPl) + '&play=1';
+        else showEpisode(nx, curPl, true, true);
         return;
       }
       showToast('Episode finished.');
@@ -957,39 +1010,46 @@
 
   /* ---------- views and routing ---------- */
   function showLibrary() {
-    if (playing) pause();
-    ep = null; curPl = null;
-    $('view-library').hidden = false; $('view-player').hidden = true; $('view-playlist').hidden = true; $('transport').hidden = true;
-    $('back').hidden = true; $('title').textContent = 'Travel Podcasts';
+    setView('library');
+    $('title').textContent = 'Travel Podcasts';
     document.title = 'Travel Podcasts';
     renderLibrary();
-    if ('caches' in window) refreshOffline().then(() => { if (!ep) renderLibrary(); });
+    if ('caches' in window) refreshOffline().then(() => { if (view === 'library') renderLibrary(); });
   }
 
   function showPlaylist(id) {
     const p = plById(id);
     if (!p) { location.hash = ''; return; }
-    if (playing) pause();
-    ep = null; curPl = null; tab = 'playlists'; store.set('tp.tab', tab);
-    $('view-library').hidden = true; $('view-player').hidden = true; $('transport').hidden = true; $('view-playlist').hidden = false;
-    $('back').hidden = false; $('title').textContent = p.name; document.title = p.name + ' \u00b7 Travel Podcasts';
+    tab = 'playlists'; store.set('tp.tab', tab);
+    setView('playlist');
+    $('title').textContent = p.name; document.title = p.name + ' \u00b7 Travel Podcasts';
     renderPlaylistView(p);
   }
 
-  async function showEpisode(id, plId, autoplay) {
+  function enterPlayerView() {
+    setView('player');
+    $('title').textContent = ep.title; document.title = ep.title + ' \u00b7 Travel Podcasts';
+  }
+
+  // quiet: load and start an episode without taking over the screen (the next playlist item while you browse)
+  async function showEpisode(id, plId, autoplay, quiet) {
     const found = library.find((e) => e.id === id);
-    if (!found) { location.hash = ''; return; }
-    curPl = plId && plById(plId) ? plId : null;
-    if (ep && ep.id === id) return;
+    if (!found) { if (!quiet) location.hash = ''; return; }
+    if (plId && plById(plId)) curPl = plId;
+    else if (!(ep && ep.id === id)) curPl = null;
+    if (ep && ep.id === id) { // already loaded: just show it, never restart it
+      if (!quiet) { enterPlayerView(); setTimeout(() => mark(idx, true), 50); }
+      if (autoplay && !playing) play();
+      return;
+    }
     if (playing) pause();
     ep = found;
     const pr = progress[ep.id];
     const ch = pr && !pr.done && ep.chapters[pr.ch] ? pr.ch : 0;
     const at = pr && !pr.done ? pr.u || 0 : 0;
-    $('view-library').hidden = true; $('view-playlist').hidden = true; $('view-player').hidden = false; $('transport').hidden = false;
-    $('back').hidden = false; $('title').textContent = ep.title; document.title = ep.title + ' \u00b7 Travel Podcasts';
+    if (!quiet) enterPlayerView();
     await gotoChapter(ch, false, at);
-    if (idx > 0) setTimeout(() => mark(idx, true), 50);
+    if (idx > 0 && !quiet) setTimeout(() => mark(idx, true), 50);
     if (autoplay) play();
   }
 
@@ -1004,6 +1064,28 @@
     m = h.match(/^#\/p\/(.+)$/);
     if (m) showPlaylist(decodeURIComponent(m[1])); else showLibrary();
   }
+
+  /* ---------- keep the app current: a page left open in the background never reloads itself ---------- */
+  let appStamp = null;
+  async function appVersion() {
+    try {
+      const r = await fetch('app.js', { cache: 'no-store' });
+      if (!r.ok) return null;
+      const t = await r.text();
+      let h = 0; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0;
+      return t.length + ':' + h;
+    } catch (err) { return null; }
+  }
+  async function checkForUpdate() {
+    const v = await appVersion();
+    if (!v) return;
+    if (appStamp === null) { appStamp = v; return; }
+    if (v === appStamp) return;
+    if (!playing) { location.reload(); return; }
+    showToast('A new version is ready. It will load when you pause or reopen the app.');
+    appStamp = v; updatePending = true;
+  }
+  let updatePending = false;
 
   /* ---------- UI wiring ---------- */
   function buildSpeedButtons() {
@@ -1061,7 +1143,10 @@
   }
 
   function wire() {
-    $('back').addEventListener('click', () => { location.hash = ep && curPl ? '#/p/' + encodeURIComponent(curPl) : ''; });
+    $('back').addEventListener('click', () => { location.hash = view === 'player' && ep && curPl ? '#/p/' + encodeURIComponent(curPl) : ''; });
+    $('mini-open').addEventListener('click', () => { if (ep) location.hash = '#/e/' + encodeURIComponent(ep.id) + (curPl ? '?pl=' + encodeURIComponent(curPl) : ''); });
+    $('mini-play').addEventListener('click', () => toggle());
+    $('mini-next').addEventListener('click', () => { if (ep && chIdx + 1 < ep.chapters.length) gotoChapter(chIdx + 1, playing); });
     document.querySelectorAll('#tabs button').forEach((b) => b.addEventListener('click', () => {
       tab = b.dataset.tab; store.set('tp.tab', tab); renderLibrary();
     }));
@@ -1085,7 +1170,7 @@
       jumpTo(i);
     });
     document.addEventListener('keydown', (e) => {
-      if (!ep || e.target.closest('input,textarea,select,dialog')) return;
+      if (!ep || view !== 'player' || e.target.closest('input,textarea,select,dialog')) return;
       if (e.code === 'Space') { e.preventDefault(); toggle(); }
       else if (e.code === 'ArrowRight') skip(3);
       else if (e.code === 'ArrowLeft') skip(-3);
@@ -1157,6 +1242,7 @@
     await loadLibrary();
     window.addEventListener('hashchange', route);
     route();
+    checkForUpdate();
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* optional */ }
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   }

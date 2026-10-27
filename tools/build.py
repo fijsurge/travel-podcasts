@@ -68,9 +68,36 @@ def parse_voices(meta, speakers):
     return voices
 
 
+# Speech rules that change how text is read aloud. A chapter's hash includes whatever these rules touch in
+# that chapter, so changing a rule remakes only the chapters it affects (not every episode).
+YEAR_BEFORE_COMMA = re.compile(r"(?<![\d.$\u20ac\u00a3])(?<!\d,)\b(1[0-9]{3}|20[0-9]{2}),(?!\d)")
+
+
+DECADE_OR_RANGE = re.compile(r"\b(?:1[0-9]{2}0|20[0-9]0)s\b|\b(?:1[0-9]{3}|20[0-9]{2})\s?[-\u2013]\s?(?:1[0-9]{3}|20[0-9]{2})\b|\b1000\b|\b[1-9]00s\b")
+
+
+def load_pronunciations():
+    p = ROOT / "tools" / "pronunciations.json"
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+
+
+def speech_fixups(paragraphs):
+    text = "\n".join(paragraphs)
+    found = ["yc:" + m.group(1) for m in YEAR_BEFORE_COMMA.finditer(text)]
+    found += ["dr:" + m.group(0) for m in DECADE_OR_RANGE.finditer(text)]
+    for word, said in sorted(load_pronunciations().items()):
+        if re.search(r"\b" + re.escape(word) + r"\b", text):
+            found.append(f"pr:{word}={said}")
+    return found
+
+
 def chapter_hash(paragraphs, speakers, voices):
     """Identifies the exact text and voices a chapter's audio was made from."""
-    blob = json.dumps([paragraphs, speakers, voices, GEN_VERSION], sort_keys=True, ensure_ascii=False)
+    parts = [paragraphs, speakers, voices, GEN_VERSION]
+    fx = speech_fixups(paragraphs)
+    if fx:  # only when a rule applies, so untouched chapters keep their existing hash
+        parts.append(fx)
+    blob = json.dumps(parts, sort_keys=True, ensure_ascii=False)
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:12]
 
 

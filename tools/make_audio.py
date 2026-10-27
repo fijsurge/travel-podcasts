@@ -80,24 +80,47 @@ def year_words(y):
     if 2000 <= y <= 2009:
         return "two thousand" + ("" if y == 2000 else " " + ONES[y - 2000])
     hi, lo = divmod(y, 100)
+    if y == 1000:
+        return "one thousand"
     if lo == 0:
         return two_digits(hi) + " hundred"
     return two_digits(hi) + (" oh " + ONES[lo] if lo < 10 else " " + two_digits(lo))
 
 
-YEAR = re.compile(r"(?<![\d,.$€£])\b(1[0-9]{3}|20[0-9]{2})\b(?![\d,%]|\.\d)")
+YEAR = re.compile(r"(?<![\d.$€£])(?<!\d,)\b(1[0-9]{3}|20[0-9]{2})\b(?!\d|,\d|%|\.\d)")
+
+
+def plural_tens(word):
+    """sixty -> sixties, ten -> tens, hundred -> hundreds"""
+    return word[:-1] + "ies" if word.endswith("y") else word + "s"
+
+
+DECADE = re.compile(r"(?<![\d.$€£])\b(1[0-9]{2}0|20[0-9]0)s\b")
+YEAR_RANGE = re.compile(r"(?<![\d.$€£])\b(1[0-9]{3}|20[0-9]{2})\s?[-\u2013]\s?(1[0-9]{3}|20[0-9]{2})\b(?!\d)")
+
+
+def decade_words(n):
+    """1960 -> 'nineteen sixties', 1900 -> 'nineteen hundreds', 2000 -> 'two thousands'."""
+    if n == 2000:
+        return "two thousands"
+    hi, lo = divmod(n, 100)
+    return two_digits(hi) + " " + (plural_tens(two_digits(lo)) if lo else "hundreds")
+
+
+HUNDREDS = re.compile(r"(?<![\d.$€£])\b([1-9])00s\b")
 
 
 def prepare(text, pron):
+    text = HUNDREDS.sub(lambda m: ONES[int(m.group(1))] + " hundreds", text)
+    text = YEAR_RANGE.sub(lambda m: m.group(1) + " to " + m.group(2), text)
+    text = DECADE.sub(lambda m: decade_words(int(m.group(1))), text)
     text = YEAR.sub(lambda m: year_words(int(m.group(1))), text)
     for word, said in pron.items():
         text = re.sub(r"\b" + re.escape(word) + r"\b", said, text)
     return text
 
 
-def load_pronunciations():
-    p = ROOT / "tools" / "pronunciations.json"
-    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+load_pronunciations = build.load_pronunciations
 
 
 # ---------- units: (paragraph, speaker, sentence) ----------

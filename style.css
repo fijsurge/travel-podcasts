@@ -215,3 +215,20 @@ code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: .
 .sec { margin: 22px 0 0; font-size: 1rem; }
 
 .sec.first { margin-top: 12px; }
+
+/* Mini player */
+.mini {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; display: flex; align-items: center; gap: 2px;
+  background: var(--surface); border-top: 1px solid var(--line);
+  padding: 6px 8px calc(env(safe-area-inset-bottom) + 8px) 14px;
+  box-shadow: 0 -6px 20px rgba(0,0,0,.08);
+}
+.mini[hidden] { display: none; }
+.mini-open { flex: 1; min-width: 0; text-align: left; background: transparent; border: 0; padding: 6px 4px; color: inherit; }
+.mini-title, .mini-sub { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini-title { font-weight: 600; }
+.mini-sub { color: var(--muted); font-size: .85rem; }
+.mini .t-btn { width: 48px; height: 48px; }
+.mini-bar { position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--line); }
+.mini-bar div { height: 100%; width: 0; background: var(--accent); }
+body.has-mini #main { padding-bottom: 96px; }
