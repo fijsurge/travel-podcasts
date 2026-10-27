@@ -194,24 +194,31 @@
     const have = new Set([...offlineKeys].map((k) => k.replace(/^.*?\/(audio\/)/, '$1')));
     return urls.every((u) => have.has(u));
   }
+  const haveKeys = () => new Set([...offlineKeys].map((k) => k.replace(/^.*?\/(audio\/)/, '$1')));
+  // Downloads every part of one episode into the offline cache (skipping what is already there).
+  async function downloadEpisode(e, step) {
+    const urls = offlineUrls(e), parts = urls.length / 2;
+    const have = haveKeys();
+    const cache = await caches.open(AUDIO_CACHE);
+    for (let i = 0; i < urls.length; i++) {
+      if (step) step(Math.floor(i / 2) + 1, parts);
+      if (have.has(urls[i])) continue;
+      const r = await fetch(urls[i]);
+      if (!r.ok) throw new Error('http ' + r.status);
+      await cache.put(urls[i], r);
+    }
+    // drop older versions of this episode's audio
+    const keep = new Set(urls.map((u) => new URL(u, location.href).href));
+    const prefix = new URL('audio/' + encodeURIComponent(e.id) + '/', location.href).href;
+    for (const req of await cache.keys()) if (req.url.startsWith(prefix) && !keep.has(req.url)) await cache.delete(req);
+  }
+  // make sure the app itself and the audio list are cached too, so it opens with no signal
+  const warmShell = () => Promise.all(['audio/manifest.json', 'library.json'].map((u) => fetch(u, { cache: 'reload' }).catch(() => {})));
   async function saveOffline(e, btn) {
-    const urls = offlineUrls(e);
-    const parts = urls.length / 2;
     try {
-      // make sure the app itself and the audio list are cached too, so it opens with no signal
-      await Promise.all(['audio/manifest.json', 'library.json'].map((u) => fetch(u, { cache: 'reload' }).catch(() => {})));
-      const cache = await caches.open(AUDIO_CACHE);
-      for (let i = 0; i < urls.length; i++) {
-        btn.textContent = `Saving ${Math.floor(i / 2) + 1} of ${parts}\u2026`;
-        btn.disabled = true;
-        const r = await fetch(urls[i]);
-        if (!r.ok) throw new Error('http ' + r.status);
-        await cache.put(urls[i], r);
-      }
-      // drop older versions of this episode's audio
-      const keep = new Set(urls.map((u) => new URL(u, location.href).href));
-      const prefix = new URL('audio/' + encodeURIComponent(e.id) + '/', location.href).href;
-      for (const req of await cache.keys()) if (req.url.startsWith(prefix) && !keep.has(req.url)) await cache.delete(req);
+      await warmShell();
+      btn.disabled = true;
+      await downloadEpisode(e, (i, total) => { btn.textContent = `Saving ${i} of ${total}\u2026`; });
       showToast('Saved for offline listening.');
     } catch (err) {
       showToast('Saving stopped. Check your connection and try again.');
@@ -908,6 +915,8 @@
       b.addEventListener('click', () => { $('dlg-ep').close(); fn(); });
       box.append(b, mk('p', 'fine opt-hint', hint));
     };
+    add('Play next', 'Plays right after the current episode ends.', () => enqueue(e.id, true));
+    add('Add to queue', 'Plays after anything already queued.', () => enqueue(e.id, false));
     add('Add to a playlist', 'Group episodes for a trip. Only on this phone.', () => openPlPick(e));
     if (e.user) {
       add('Delete from this phone', 'You added this one yourself. It is not on GitHub, so this deletes it for good.', () => removeUserEp(e), 'ghost wide danger');
@@ -949,11 +958,104 @@
     $('dlg-pl').showModal();
   }
 
+  /* ---------- up next ---------- */
+  let queue = store.get('tp.queue', []);
+  const saveQueue = () => store.set('tp.queue', queue);
+  function updateQueueUi() {
+    queue = queue.filter(epById);
+    const n = queue.length;
+    $('queue-label').textContent = n ? 'Up next \u00b7 ' + n : 'Up next';
+    $('queue-open').hidden = !n; $('queue-open').textContent = 'Up next \u00b7 ' + n + (n === 1 ? ' episode' : ' episodes');
+  }
+  function enqueue(id, next) {
+    queue = queue.filter((x) => x !== id);
+    if (next) queue.unshift(id); else queue.push(id);
+    saveQueue(); updateQueueUi();
+    showToast(next ? 'It will play next.' : 'Added to your queue.');
+  }
+  function popQueue() {
+    let id = null;
+    while (queue.length && !id) { const x = queue.shift(); if (epById(x)) id = x; }
+    saveQueue(); updateQueueUi();
+    return id;
+  }
+  function openQueue() {
+    queue = queue.filter(epById);
+    const ul = $('queue-list'); ul.textContent = '';
+    $('queue-clear').hidden = !queue.length;
+    if (!queue.length) ul.append(mk('li', 'fine', 'Nothing queued. Use \u22ef on an episode and choose Play next.'));
+    queue.forEach((id, i) => {
+      const e = epById(id);
+      const li = mk('li', 'pl-row');
+      const t = mk('span', 'row-title', ''); t.append(mk('span', '', e.title), mk('small', '', `${e.place ? e.place + ' \u00b7 ' : ''}about ${e.minutes} min`));
+      li.append(t);
+      const btn = (label, aria, fn, disabled) => { const b = mk('button', 'icon-btn', label); b.type = 'button'; b.setAttribute('aria-label', aria); b.disabled = !!disabled; b.addEventListener('click', fn); li.append(b); };
+      const move = (d) => () => { const j = i + d; [queue[i], queue[j]] = [queue[j], queue[i]]; saveQueue(); openQueue(); };
+      btn('\u2191', 'Move up', move(-1), i === 0);
+      btn('\u2193', 'Move down', move(1), i === queue.length - 1);
+      btn('\u2715', 'Remove from the queue', () => { queue.splice(i, 1); saveQueue(); updateQueueUi(); openQueue(); });
+      ul.append(li);
+    });
+    if (!$('dlg-queue').open) $('dlg-queue').showModal();
+  }
+
+  /* ---------- download a whole playlist for a trip ---------- */
+  const mb = (bytes) => (bytes >= 1e8 ? Math.round(bytes / 1e6) : Math.round(bytes / 1e5) / 10) + ' MB';
+  function plStats(p) {
+    const eps = p.items.map(epById).filter((e) => e && !e.user && audioCount(e) > 0);
+    let need = 0, missing = 0, partial = 0, all = true;
+    eps.forEach((e) => {
+      e.chapters.forEach((_c, n) => { if (!hasAudio(e, n)) missing++; });
+      if (!savedOffline(e)) { all = false; e.chapters.forEach((_c, n) => { const a = hasAudio(e, n); if (a) need += a.bytes || 0; }); }
+      partial += audioCount(e) < e.chapters.length ? 1 : 0;
+    });
+    return { eps, need, missing, all };
+  }
+  let plDownloading = false;
+  function renderPlDownload(p) {
+    const btn = $('pl-dl'), note = $('pl-dl-note');
+    const st = plStats(p);
+    btn.hidden = note.hidden = !('caches' in window) || !st.eps.length;
+    if (btn.hidden || plDownloading) return;
+    btn.disabled = false;
+    if (st.all) {
+      btn.textContent = 'Saved on this phone \u2713'; btn.className = 'ghost wide';
+      note.textContent = 'These episodes play with no signal. Tap to remove the saved audio.';
+    } else {
+      btn.textContent = 'Download for the trip \u00b7 ' + mb(st.need); btn.className = 'ghost wide';
+      note.textContent = 'Saves the audio on this phone so it plays with no signal. Best done on Wi-Fi.';
+    }
+    if (st.missing) note.textContent += ` ${st.missing} part${st.missing === 1 ? ' has' : 's have'} no audio yet, so download again once ${st.missing === 1 ? 'it is' : 'they are'} ready.`;
+    btn.onclick = st.all ? () => removePlaylistDownloads(p) : () => downloadPlaylist(p);
+  }
+  async function downloadPlaylist(p) {
+    const btn = $('pl-dl');
+    const eps = plStats(p).eps.filter((e) => !savedOffline(e));
+    plDownloading = true; btn.disabled = true;
+    try {
+      await warmShell();
+      for (let i = 0; i < eps.length; i++) {
+        await downloadEpisode(eps[i], (part, total) => { btn.textContent = `Downloading episode ${i + 1} of ${eps.length} \u00b7 part ${part} of ${total}\u2026`; });
+        await refreshOffline();
+      }
+      showToast('Ready for the trip.');
+    } catch (err) { showToast('Downloading stopped. Check your connection and tap again to carry on.'); }
+    plDownloading = false;
+    await refreshOffline();
+    if (view === 'playlist') renderPlDownload(p);
+  }
+  async function removePlaylistDownloads(p) {
+    if (!confirm('Remove the saved audio for this playlist from this phone? Episodes in other playlists lose it too.')) return;
+    for (const e of plStats(p).eps) await removeOffline(e, true);
+    renderPlDownload(p);
+  }
+
   function renderPlaylistView(p) {
     p.items = p.items.filter(epById);
     const ul = $('pl-items');
     ul.textContent = '';
     $('pl-play').hidden = !p.items.length;
+    renderPlDownload(p);
     $('pl-play').onclick = () => {
       location.hash = '#/e/' + encodeURIComponent(p.items[0]) + '?pl=' + encodeURIComponent(p.id) + '&play=1';
     };
@@ -1617,11 +1719,13 @@
     playing = false; stopAll(); switching = false; setPlayingUi(); unlockScreen();
     if (last) {
       remember(true);
-      const nx = nextInPlaylist();
+      const q = popQueue();
+      const nx = q || nextInPlaylist();
+      const pl = q ? null : curPl;
       if (nx) {
-        showToast('Next in your playlist\u2026');
-        if (view === 'player') location.hash = '#/e/' + encodeURIComponent(nx) + '?pl=' + encodeURIComponent(curPl) + '&play=1';
-        else showEpisode(nx, curPl, true, true);
+        showToast(q ? 'Next in your queue\u2026' : 'Next in your playlist\u2026');
+        if (view === 'player') location.hash = '#/e/' + encodeURIComponent(nx) + (pl ? '?pl=' + encodeURIComponent(pl) + '&play=1' : '?play=1');
+        else showEpisode(nx, pl, true, true);
         return;
       }
       showToast('Episode finished.');
@@ -1684,6 +1788,7 @@
       if (autoplay && !playing) play();
       return;
     }
+    if (queue.includes(found.id)) { queue = queue.filter((x) => x !== found.id); saveQueue(); updateQueueUi(); }
     if (playing) pause();
     ep = found;
     const pr = progress[ep.id];
@@ -1805,6 +1910,9 @@
     $('scrubber').addEventListener('change', onScrubCommit);
     $('scrubber').addEventListener('pointerup', () => setTimeout(() => { scrubbing = false; }, 400));
     $('sleep-btn').addEventListener('click', openSleep);
+    $('queue-btn').addEventListener('click', openQueue);
+    $('queue-open').addEventListener('click', openQueue);
+    $('queue-clear').addEventListener('click', () => { queue = []; saveQueue(); updateQueueUi(); openQueue(); });
     $('ver-btn').addEventListener('click', openVersions);
     let st = null;
     $('search-input').addEventListener('input', (e) => { clearTimeout(st); st = setTimeout(() => runSearch(e.target.value), 120); });
@@ -1905,6 +2013,7 @@
       n.textContent = 'This browser cannot read text aloud. Try Chrome on Android or Safari on iPhone.';
     }
     await loadLibrary();
+    updateQueueUi();
     window.addEventListener('hashchange', route);
     route();
     checkForUpdate();
