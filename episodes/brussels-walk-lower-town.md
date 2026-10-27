@@ -7,6 +7,9 @@ order: 4
 blurb: A stop-by-stop walk from the Manneken Pis through the Grand Place and the Galeries to the buried river and the island where Brussels began. Allow about two hours with pauses.
 speakers: Anna, Ben
 voices: Anna=af_heart, Ben=bm_george
+lat: 50.8467
+lon: 4.3525
+stops: 50.84497,4.34992; 50.84673,4.35247; 50.84836,4.35519; 50.84812,4.35003; 50.84877,4.34701
 ---
 
 ## Notes before you listen (skip this part when listening)

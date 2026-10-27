@@ -7,6 +7,8 @@ order: 3
 blurb: A quick briefing for your day in Brussels. What the city is, what to see, and the stories that make it make sense.
 speakers: Anna, Ben
 voices: Anna=af_heart, Ben=bm_george
+lat: 50.8467
+lon: 4.3525
 ---
 
 ## Notes before you listen (skip this part when listening)

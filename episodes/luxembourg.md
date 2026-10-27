@@ -5,6 +5,8 @@ order: 1
 blurb: Two hosts, Anna and Ben, tell the story of Luxembourg, from a Roman-era fortress and a medieval dynasty to a modern financial centre.
 speakers: Anna, Ben
 voices: Anna=af_heart, Ben=bm_george
+lat: 49.6116
+lon: 6.1319
 ---
 
 ## Notes before you listen (skip this part when listening)

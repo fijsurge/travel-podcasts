@@ -103,6 +103,23 @@ def chapter_hash(paragraphs, speakers, voices):
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:12]
 
 
+def _num(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _stops(v):
+    """'lat,lon; lat,lon' -> [[lat, lon], ...] (one per Stop/Chapter section, in order)."""
+    out = []
+    for part in (v or "").split(";"):
+        bits = [b.strip() for b in part.split(",")]
+        if len(bits) == 2 and _num(bits[0]) is not None and _num(bits[1]) is not None:
+            out.append([float(bits[0]), float(bits[1])])
+    return out
+
+
 def parse_front(raw: str):
     meta = {}
     m = re.match(r"^---\n(.*?)\n---\n", raw, re.S)
@@ -151,6 +168,9 @@ def parse_episode(raw: str, slug: str):
         "format": meta.get("format", "deep"),  # overview | walk | deep
         "series": meta.get("series", ""),
         "blurb": meta.get("blurb", ""),
+        "lat": _num(meta.get("lat")),
+        "lon": _num(meta.get("lon")),
+        "stops": _stops(meta.get("stops", "")),
         "order": float(meta.get("order", 999)),
         "words": words,
         "minutes": max(1, round(words / WPM)),

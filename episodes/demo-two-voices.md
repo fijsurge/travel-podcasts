@@ -4,6 +4,8 @@ place: Brussels
 order: 99
 blurb: A two-minute conversation between two hosts, to hear how multiple speakers sound on your phone.
 speakers: Anna, Ben
+lat: 50.8467
+lon: 4.3525
 ---
 
 ## Welcome

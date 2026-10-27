@@ -5,6 +5,8 @@ order: 2
 blurb: Two hosts, Anna and Ben, walk through the history of Brussels, from a marsh settlement to the capital of Europe.
 speakers: Anna, Ben
 voices: Anna=af_heart, Ben=bm_george
+lat: 50.8467
+lon: 4.3525
 ---
 
 ## Notes before you listen (skip this part when listening)

@@ -5,6 +5,8 @@ order: 13
 blurb: A test of a more conversational two-host style. Same facts as the first two parts of the main Brussels episode, so you can compare.
 speakers: Anna, Ben
 voices: Anna=af_heart, Ben=bm_george
+lat: 50.8467
+lon: 4.3525
 ---
 
 ## Notes before you listen (skip this part when listening)

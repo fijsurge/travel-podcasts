@@ -3,6 +3,8 @@ title: The Story of Luxembourg (one narrator)
 place: Luxembourg
 order: 11
 blurb: From a Roman-era fortress and a medieval dynasty to the Gibraltar of the North, a steel nation and a modern financial centre.
+lat: 49.6116
+lon: 6.1319
 ---
 
 ## Notes before you listen (skip this part when listening)

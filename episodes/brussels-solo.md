@@ -3,6 +3,8 @@ title: The Story of Brussels (one narrator)
 place: Brussels
 order: 12
 blurb: From a marsh settlement on the Senne to the Grand Place, the Belgian revolution and the capital of Europe.
+lat: 50.8467
+lon: 4.3525
 ---
 
 ## Notes before you listen (skip this part when listening)
