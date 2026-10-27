@@ -27,7 +27,7 @@ import build  # noqa: E402  (shared parsing and chapter hashes)
 ROOT = build.ROOT
 AUDIO = ROOT / "audio"
 SENTENCE_GAP = 0.30  # seconds of silence between sentences
-TURN_GAP = 0.70      # seconds between paragraphs / speaker turns
+TURN_GAP = 0.70      # seconds between paragraphs in a single-narrator episode
 MP3_BITRATE = "48k"
 
 # ---------- text preparation ----------
@@ -113,6 +113,30 @@ def chapter_units(chapter, speakers):
     return units
 
 
+def para_words(ch, speakers):
+    out = []
+    for text in ch["paragraphs"]:
+        m = build.SPEAKER_RE.match(text)
+        if m and m.group(1) in speakers:
+            text = text[m.end():]
+        out.append(len(text.split()))
+    return out
+
+
+def turn_gap(speakers, prev_unit, unit, words):
+    """Pause before a new paragraph. Single narrators keep a steady pause; hosts get a conversational rhythm:
+    quick back-and-forth around short reactions, a beat after a question, a fuller pause otherwise."""
+    if not speakers:
+        return TURN_GAP
+    if words[unit["p"]] <= 4:
+        return 0.18          # a short reaction ("Right." "Ha.")
+    if words[prev_unit["p"]] <= 4:
+        return 0.28          # the answer after a reaction
+    if prev_unit["text"].rstrip().endswith("?"):
+        return 0.38
+    return 0.55
+
+
 def episodes():
     out = []
     for p in sorted((ROOT / "episodes").glob("*.md")):
@@ -174,12 +198,13 @@ def cmd_chapter(args):
     )
     pieces, timings, t, sr = [], [], 0.0, 24000
     prev_p = None
+    words = para_words(ch, ep["speakers"])
     for i, u in enumerate(units):
         voice = ep["voices"].get(u["speaker"] or "narrator") or ep["voices"]["narrator"]
         samples, sr = kokoro.create(prepare(u["text"], pron), voice=voice, speed=1.0, lang=lang_of(voice))
         gap = 0.0
         if i:
-            gap = TURN_GAP if u["p"] != prev_p else SENTENCE_GAP
+            gap = turn_gap(ep["speakers"], units[i - 1], u, words) if u["p"] != prev_p else SENTENCE_GAP
             pieces.append(np.zeros(int(sr * gap), dtype=np.float32))
             t += gap
         dur = len(samples) / sr
