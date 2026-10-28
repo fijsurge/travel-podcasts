@@ -424,6 +424,156 @@
     pollAudioStatus().then(() => scheduleAudioPoll(audioStatus.active ? 120000 : 300000));
   }
 
+
+  /* ---------- walking map: stops on a street map, with directions. Your position never leaves the phone. ---------- */
+  const OSM_TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+  const WALK_MIN_PER_M = 1.3 / 80; // streets wind: straight line x 1.3, at about 80 m a minute
+  let leafletLoad = null, walkMap = null, walkPins = [], walkWatch = null, walkYou = null, walkSel = 0, walkGps = null;
+  const DIRS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
+  function heading(a, b, c, d) {
+    const rad = Math.PI / 180, y = Math.sin((d - b) * rad) * Math.cos(c * rad);
+    const x = Math.cos(a * rad) * Math.sin(c * rad) - Math.sin(a * rad) * Math.cos(c * rad) * Math.cos((d - b) * rad);
+    return DIRS[Math.round((((Math.atan2(y, x) / rad) + 360) % 360) / 45) % 8];
+  }
+  const walkTime = (m) => Math.max(1, Math.round(m * WALK_MIN_PER_M)) + ' min';
+  const dirUrl = (st) => 'https://www.google.com/maps/dir/?api=1&destination=' + st.lat + ',' + st.lon + '&travelmode=walking';
+  function wholeWalkUrl(stops) {
+    const f = stops[0], l = stops[stops.length - 1], mid = stops.slice(1, -1).map((x) => x.lat + ',' + x.lon).join('%7C');
+    return 'https://www.google.com/maps/dir/?api=1&origin=' + f.lat + ',' + f.lon + '&destination=' + l.lat + ',' + l.lon + (mid ? '&waypoints=' + mid : '') + '&travelmode=walking';
+  }
+  function legText(stops, k) {
+    if (k === 0) return 'First stop';
+    const a = stops[k - 1], b = stops[k], m = metres(a.lat, a.lon, b.lat, b.lon);
+    return fmtDist(m) + ' ' + heading(a.lat, a.lon, b.lat, b.lon) + ' of stop ' + k + ' · about ' + walkTime(m);
+  }
+  // Where the player is in the walk: which stop it is on, and which one to walk to next.
+  function walkState() {
+    const stops = ep ? stopsOf(ep) : [];
+    if (!stops.length) return null;
+    let cur = stops.findIndex((s) => s.ch === chIdx);
+    if (cur < 0) cur = chIdx < stops[0].ch ? -1 : stops.length - 1;
+    return { stops, cur, next: cur + 1 < stops.length ? cur + 1 : null };
+  }
+  function updateWalkCard() {
+    const card = $('walk-card'), btn = $('map-btn'), w = walkState();
+    card.hidden = btn.hidden = !w;
+    if (!w) return;
+    card.textContent = '';
+    const { stops, cur, next } = w;
+    card.append(mk('div', 'wc-now', cur < 0 ? 'Before the first stop' : 'Stop ' + (cur + 1) + ' of ' + stops.length + ' · ' + stops[cur].name));
+    if (next == null) {
+      card.append(mk('div', 'wc-next', 'That was the last stop'));
+    } else {
+      const n = stops[next];
+      card.append(mk('div', 'wc-next', (cur < 0 ? 'Head to ' : 'Next: ') + n.name));
+      card.append(mk('div', 'wc-how', (cur < 0 ? '' : legText(stops, next) + '. ') + n.hint));
+      const acts = mk('div', 'wc-acts', '');
+      const a = mk('a', 'btn-sm', 'Directions'); a.href = dirUrl(n); a.target = '_blank'; a.rel = 'noopener';
+      const m = mk('button', 'btn-sm ghost', 'See on map'); m.type = 'button'; m.addEventListener('click', () => openWalkMap(next));
+      acts.append(a, m); card.append(acts);
+    }
+  }
+
+  function loadLeaflet() {
+    if (window.L) return Promise.resolve(window.L);
+    if (leafletLoad) return leafletLoad;
+    leafletLoad = new Promise((resolve, reject) => {
+      const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'vendor/leaflet.css'; document.head.append(css);
+      const js = document.createElement('script'); js.src = 'vendor/leaflet.js';
+      js.onload = () => resolve(window.L); js.onerror = () => { leafletLoad = null; reject(new Error('leaflet')); };
+      document.head.append(js);
+    });
+    return leafletLoad;
+  }
+
+  function selectStop(k, pan) {
+    const w = walkState(); if (!w) return;
+    walkSel = k;
+    [...$('walk-stops').children].forEach((li, i) => li.setAttribute('aria-current', String(i === k)));
+    walkPins.forEach((m, i) => { const el = m.getElement(); if (el) el.classList.toggle('sel', i === k); });
+    if (pan && walkMap && walkPins[k]) walkMap.panTo(walkPins[k].getLatLng());
+    const li = $('walk-stops').children[k]; if (li && pan === 'list') li.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+
+  function renderWalkStops(w) {
+    const ol = $('walk-stops'); ol.textContent = '';
+    w.stops.forEach((st, k) => {
+      const li = mk('li', '', ''); li.dataset.k = k;
+      li.append(mk('span', 'num', String(k + 1)), mk('div', 'nm', st.name));
+      const leg = mk('p', 'leg', legText(w.stops, k)); leg.id = 'leg-' + k; li.append(leg);
+      if (st.hint) li.append(mk('p', 'how', st.hint));
+      const acts = mk('div', 'acts', '');
+      const a = mk('a', 'btn-sm', 'Directions'); a.href = dirUrl(st); a.target = '_blank'; a.rel = 'noopener';
+      const pl = mk('button', 'btn-sm ghost', 'Play this stop'); pl.type = 'button';
+      pl.addEventListener('click', () => { $('dlg-map').close(); gotoChapter(st.ch, true); });
+      const sh = mk('button', 'btn-sm ghost', 'Show on map'); sh.type = 'button';
+      sh.addEventListener('click', () => selectStop(k, true));
+      acts.append(a, pl, sh); li.append(acts); ol.append(li);
+    });
+    $('map-whole').href = wholeWalkUrl(w.stops);
+  }
+
+  async function openWalkMap(focus) {
+    const w = walkState(); if (!w) return;
+    const target = focus != null ? focus : (w.next != null ? w.next : Math.max(0, w.cur));
+    $('map-title').textContent = ep.title.replace(/^Walking\s+/i, '');
+    renderWalkStops(w);
+    $('map-gps-note').textContent = walkWatch == null ? 'Uses your location only on this phone.' : '';
+    $('map-gps').textContent = walkWatch == null ? 'Show where I am' : 'Hide my location';
+    const dlg = $('dlg-map'); dlg.showModal();
+    selectStop(target, false);
+    const box = $('walk-map'); box.classList.remove('offline');
+    try {
+      const L = await loadLeaflet();
+      if (walkMap) { walkMap.remove(); walkMap = null; walkPins = []; walkYou = null; }
+      box.textContent = '';
+      walkMap = L.map(box, { zoomControl: true, attributionControl: true, tap: true });
+      L.tileLayer(OSM_TILES, { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(walkMap);
+      const pts = w.stops.map((s) => [s.lat, s.lon]);
+      L.polyline(pts, { color: '#f0b93b', weight: 4, opacity: .95, dashArray: '2 9', lineCap: 'round' }).addTo(walkMap);
+      walkPins = w.stops.map((s, k) => {
+        const m = L.marker([s.lat, s.lon], { icon: L.divIcon({ className: 'walk-pin' + (k === w.next ? ' next' : ''), html: '<span>' + (k + 1) + '</span>', iconSize: [34, 34], iconAnchor: [17, 17] }), keyboard: true, title: 'Stop ' + (k + 1) + ': ' + s.name }).addTo(walkMap);
+        m.on('click', () => selectStop(k, 'list'));
+        return m;
+      });
+      walkMap.fitBounds(L.latLngBounds(pts), { padding: [34, 34], maxZoom: 17 });
+      setTimeout(() => { if (walkMap) { walkMap.invalidateSize(); walkMap.fitBounds(L.latLngBounds(pts), { padding: [34, 34], maxZoom: 17 }); selectStop(walkSel, false); } }, 120);
+      if (walkWatch != null && walkGps) showYou(walkGps);
+    } catch (err) {
+      box.classList.add('offline');
+      box.textContent = 'The map needs an internet connection the first time. The stops below and the Directions buttons still work.';
+    }
+  }
+
+  function showYou(pos) {
+    walkGps = pos;
+    const L = window.L, w = walkState();
+    if (L && walkMap) {
+      const ll = [pos.coords.latitude, pos.coords.longitude];
+      if (!walkYou) walkYou = { dot: L.circleMarker(ll, { radius: 8, color: '#fff', weight: 3, fillColor: '#2a6c8b', fillOpacity: 1 }).addTo(walkMap), ring: L.circle(ll, { radius: pos.coords.accuracy || 30, color: '#2a6c8b', weight: 1, fillOpacity: .12 }).addTo(walkMap) };
+      else { walkYou.dot.setLatLng(ll); walkYou.ring.setLatLng(ll).setRadius(pos.coords.accuracy || 30); }
+    }
+    if (w) {
+      const at = w.next != null ? w.next : Math.max(0, w.cur), st = w.stops[at];
+      const m = metres(pos.coords.latitude, pos.coords.longitude, st.lat, st.lon);
+      $('map-gps-note').textContent = m < 40 ? 'You are at stop ' + (at + 1) + '.' : 'You are ' + fmtDist(m) + ' ' + heading(st.lat, st.lon, pos.coords.latitude, pos.coords.longitude) + ' of stop ' + (at + 1) + ' (about ' + walkTime(m) + ').';
+    }
+  }
+  function toggleWalkGps() {
+    if (walkWatch != null) { stopWalkGps(); $('map-gps').textContent = 'Show where I am'; $('map-gps-note').textContent = 'Uses your location only on this phone.'; return; }
+    if (!navigator.geolocation) { $('map-gps-note').textContent = 'This browser cannot share a location.'; return; }
+    $('map-gps').textContent = 'Hide my location'; $('map-gps-note').textContent = 'Finding you…';
+    walkWatch = navigator.geolocation.watchPosition(showYou, (err) => {
+      stopWalkGps(); $('map-gps').textContent = 'Show where I am';
+      $('map-gps-note').textContent = err.code === 1 ? 'Location is blocked. Allow it for this site in your browser settings.' : 'Could not find you yet. Try again outdoors.';
+    }, { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 });
+  }
+  function stopWalkGps() {
+    if (walkWatch != null) navigator.geolocation.clearWatch(walkWatch);
+    walkWatch = null; walkGps = null;
+    if (walkYou) { walkYou.dot.remove(); walkYou.ring.remove(); walkYou = null; }
+  }
+
   /* ---------- organizing: remove/hide, place filter, playlists ---------- */
   let hidden = store.get('tp.hidden', []);
   let playlists = store.get('tp.playlists', []);
@@ -610,7 +760,11 @@
     const pts = e.stops && e.stops.length ? e.stops : GEO_STOPS[e.id];
     if (!pts) return [];
     const chs = e.chapters.map((c, i) => (/^(stop|chapter)\s*\d+/i.test(c.label) ? i : -1)).filter((i) => i >= 0);
-    return pts.slice(0, chs.length).map((pt, k) => ({ lat: pt[0], lon: pt[1], ch: chs[k] }));
+    return pts.slice(0, chs.length).map((pt, k) => ({
+      lat: pt[0], lon: pt[1], ch: chs[k], k,
+      name: e.chapters[chs[k]].label.replace(/^(stop|chapter)\s*\d+\s*[:.\u2013-]\s*/i, ''),
+      hint: (e.hints && e.hints[k]) || '',
+    }));
   }
   function metres(a, b, c, d) {
     const R = 6371000, rad = Math.PI / 180, dLat = (c - a) * rad, dLon = (d - b) * rad;
@@ -1628,6 +1782,7 @@
     drawHero();
     updateScrub(true);
     $('ch-meta').textContent = `${chIdx + 1} of ${ep.chapters.length} · ${mode === 'audio' ? 'natural voice' : naturalOnly(ep) ? 'audio ' + STATE_TEXT[chapterState(ep, chIdx)] : 'phone voice'}`;
+    updateWalkCard();
     const src = $('sources');
     if (chIdx === ep.chapters.length - 1 && ep.sources.length) {
       src.textContent = '';
@@ -2012,6 +2167,9 @@
     $('queue-open').addEventListener('click', openQueue);
     $('queue-clear').addEventListener('click', () => { queue = []; saveQueue(); updateQueueUi(); openQueue(); });
     $('ver-btn').addEventListener('click', openVersions);
+    $('map-btn').addEventListener('click', () => openWalkMap());
+    $('map-gps').addEventListener('click', toggleWalkGps);
+    $('dlg-map').addEventListener('close', stopWalkGps);
     let st = null;
     $('search-input').addEventListener('input', (e) => { clearTimeout(st); st = setTimeout(() => runSearch(e.target.value), 120); });
     $('cr-kind').addEventListener('change', syncCreateForm);

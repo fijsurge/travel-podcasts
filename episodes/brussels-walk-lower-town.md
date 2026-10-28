@@ -10,6 +10,7 @@ voices: Anna=af_heart, Ben=bm_george
 engine: chatterbox
 lat: 50.8467
 lon: 4.3525
+hints: About a 10-minute walk from Brussels-Central station. The statue is on the corner of Rue de l'Étuve and Rue du Chêne. | Walk up Rue de l'Étuve and into Rue Charles Buls, where the t'Serclaes monument is. The square opens up at the end of the street. | Leave the square by the Rue des Bouchers, the restaurant street. The galleries open off it, a few minutes on. | Come out of the galleries and walk toward the wide Boulevard Anspach. The Bourse is the big building with the lions. | Carry on from the Bourse through the small streets. The square has an old brick market hall in the middle and bars all around.
 stops: 50.84497,4.34992; 50.84673,4.35247; 50.84836,4.35519; 50.84812,4.35003; 50.84877,4.34701
 ---
 

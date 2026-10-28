@@ -1,7 +1,9 @@
 /* Offline support: files are fetched fresh when online and served from cache when offline. */
-const CACHE = 'travel-podcasts-v4';
+const CACHE = 'travel-podcasts-v5';
+const TILE_CACHE = 'tp-tiles-v1'; // map tiles you have looked at, so the walking map still draws offline
 const AUDIO_CACHE = 'tp-audio-v1'; // filled by the page ("Save for offline"); never deleted here
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'library.json',
+  'vendor/leaflet.js', 'vendor/leaflet.css',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png',
   'fonts/young-serif-latin-400-normal.woff2', 'fonts/young-serif-latin-ext-400-normal.woff2',
   'fonts/atkinson-hyperlegible-next-latin-wght-normal.woff2', 'fonts/atkinson-hyperlegible-next-latin-ext-wght-normal.woff2'];
@@ -10,7 +12,7 @@ self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', (e) => {
-  e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE && k !== AUDIO_CACHE).map((k) => caches.delete(k))))
+  e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE && k !== AUDIO_CACHE && k !== TILE_CACHE).map((k) => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
 // Saved audio is served from its cache, with Range support so seeking works offline.
@@ -38,8 +40,20 @@ async function audioResponse(req) {
   });
 }
 
+// OpenStreetMap tiles: show the cached tile at once, refresh it in the background, keep the newest 500.
+async function tileResponse(req) {
+  const cache = await caches.open(TILE_CACHE);
+  const hit = await cache.match(req);
+  const net = fetch(req).then((r) => {
+    if (r && (r.ok || r.type === 'opaque')) cache.put(req, r.clone()).then(() => cache.keys()).then((ks) => { if (ks.length > 500) ks.slice(0, ks.length - 500).forEach((k) => cache.delete(k)); });
+    return r;
+  }).catch(() => hit || Response.error());
+  return hit || net;
+}
+
 self.addEventListener('fetch', (e) => {
   const req = e.request;
+  if (req.method === 'GET' && new URL(req.url).hostname === 'tile.openstreetmap.org') { e.respondWith(tileResponse(req)); return; }
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
   const path = new URL(req.url).pathname;
   if (/\/audio\/[^/]+\/\d+\.(mp3|json)$/.test(path)) { e.respondWith(audioResponse(req)); return; }

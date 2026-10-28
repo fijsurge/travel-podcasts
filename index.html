@@ -136,10 +136,12 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
       </button>
       <button class="chip small" id="ver-btn" aria-haspopup="dialog" hidden><span id="ver-label">Version</span></button>
+      <button class="chip small" id="map-btn" aria-haspopup="dialog" hidden><span>Map</span></button>
       <button class="chip small" id="queue-btn" aria-haspopup="dialog"><span id="queue-label">Up next</span></button>
       <button class="chip small" id="sleep-btn" aria-haspopup="dialog"><span id="sleep-label">Sleep</span></button>
     </div>
     <div class="ch-meta" id="ch-meta"></div>
+    <section class="walk-card" id="walk-card" hidden aria-label="Where to walk next"></section>
     <div class="bar" hidden><div class="bar-fill" id="bar-fill"></div></div>
     <article id="reader" class="reader" aria-live="off"></article>
     <aside id="sources" class="sources" hidden></aside>
@@ -197,6 +199,22 @@
   <a href="#/library" data-tab="library"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4v16M10 4v16M15 5l4 15"/></svg></span><span>Library</span></a>
   <a href="#/create" data-tab="create"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span><span>Create</span></a>
 </nav>
+
+<!-- Walking map -->
+<dialog id="dlg-map" class="wide-dlg">
+  <form method="dialog" class="sheet map-sheet">
+    <h2 id="map-title">Walking map</h2>
+    <div id="walk-map" class="walk-map" role="application" aria-label="Map of the walking tour"></div>
+    <div class="map-tools">
+      <button class="chip small" id="map-gps" type="button">Show where I am</button>
+      <span class="fine" id="map-gps-note"></span>
+    </div>
+    <ol class="walk-stops" id="walk-stops"></ol>
+    <a class="ghost wide linklike" id="map-whole" target="_blank" rel="noopener">Open the whole walk in Google Maps</a>
+    <p class="fine">Map data © OpenStreetMap contributors. The dashed line is a straight line between stops, not the street route. Use Directions for the exact route. Stop positions are accurate to about 50 meters.</p>
+    <button class="primary wide" value="close">Close</button>
+  </form>
+</dialog>
 
 <!-- Up next -->
 <dialog id="dlg-queue">

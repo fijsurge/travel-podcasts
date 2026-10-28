@@ -10,6 +10,8 @@ Episode format (see README.md):
   format: overview (10 to 15 min briefing), walk (stop-by-stop walking tour) or deep (long deep dive). Default deep.
   series: optional name that groups variants of the same topic.
   speakers: Anna, Ben                 (optional, for two-voice dialogue episodes)
+  stops: lat,lon; lat,lon             (optional, one per Stop/Chapter section: shows the walking map)
+  hints: how to reach stop 1 | stop 2 | ...   (optional, one short line per stop)
   engine: chatterbox                  (optional voice engine: kokoro (default) or chatterbox)
   ---
   ## Notes before you listen ...      (skipped when listening)
@@ -178,6 +180,7 @@ def parse_episode(raw: str, slug: str):
         "lat": _num(meta.get("lat")),
         "lon": _num(meta.get("lon")),
         "stops": _stops(meta.get("stops", "")),
+        "hints": [h.strip() for h in meta.get("hints", "").split("|") if h.strip()],
         "order": float(meta.get("order", 999)),
         "words": words,
         "minutes": max(1, round(words / WPM)),

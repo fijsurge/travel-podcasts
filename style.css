@@ -396,3 +396,35 @@ body.v-player .toast { bottom: calc(env(safe-area-inset-bottom) + 190px); }
 #cr-out { margin-top: 12px; font-family: ui-monospace, Menlo, monospace; font-size: .8rem; }
 #queue-open { margin: 6px 0 10px; }
 .shelf.near .linkish { margin: 4px 0 0; padding: 4px 0; text-align: left; }
+
+/* Walking map */
+.walk-card { margin: 0 0 14px; padding: 12px 14px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); display: grid; gap: 6px; }
+.walk-card .wc-now { color: var(--muted); font-size: .85rem; }
+.walk-card .wc-next { font-weight: 650; }
+.walk-card .wc-how { color: var(--muted); font-size: .9rem; }
+.walk-card .wc-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+.btn-sm { min-height: 40px; padding: 0 16px; border-radius: 999px; border: 1.5px solid var(--accent); background: var(--accent); color: var(--accent-ink); font: inherit; font-size: .9rem; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; cursor: pointer; }
+.btn-sm.ghost { background: transparent; color: var(--ink); border-color: var(--line); }
+dialog.wide-dlg { width: min(96vw, 42rem); }
+.map-sheet { gap: 10px; }
+.walk-map { height: min(52dvh, 26rem); min-height: 240px; border-radius: 14px; overflow: hidden; background: var(--bg); border: 1px solid var(--line); }
+.walk-map .leaflet-container { font: inherit; }
+.walk-map.offline { display: grid; place-items: center; padding: 20px; text-align: center; color: var(--muted); }
+.map-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.map-tools .fine { margin: 0; }
+.walk-stops { list-style: none; margin: 4px 0; padding: 0; display: grid; gap: 8px; }
+.walk-stops li { display: grid; grid-template-columns: 36px 1fr; gap: 4px 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
+.walk-stops li[aria-current="true"] { border-color: var(--signal); box-shadow: inset 0 0 0 1px var(--signal); }
+.walk-stops .num { grid-row: span 3; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.walk-stops .nm { font-weight: 650; }
+.walk-stops .leg, .walk-stops .how { color: var(--muted); font-size: .88rem; margin: 0; }
+.walk-stops .acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+a.linklike { display: flex; align-items: center; justify-content: center; min-height: 48px; border-radius: 999px; border: 1.5px solid var(--line); color: var(--ink); text-decoration: none; font-weight: 600; }
+.walk-pin span { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); border: 2.5px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,.4); font-weight: 700; font-size: .95rem; }
+.walk-pin.next span { background: var(--signal); color: var(--on-signal); }
+.walk-pin.sel span { outline: 3px solid var(--focus); outline-offset: 2px; }
+@media (prefers-color-scheme: dark) {
+  .walk-pin span { background: var(--signal); color: var(--on-signal); border-color: #0d1b24; }
+  .walk-pin.next span { background: #fff; color: #0d1b24; }
+  .walk-map .leaflet-tile-pane { filter: brightness(.8) contrast(1.05) saturate(.85); }
+}
