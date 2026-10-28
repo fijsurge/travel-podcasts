@@ -1266,7 +1266,7 @@
     ];
     const stops = $('cr-stops').value.split('\n').map((x) => x.trim()).filter(Boolean);
     if (kind === 'walk' && stops.length) { lines.push('Stops, in order:'); stops.forEach((x, i) => lines.push(`${i + 1}. ${x}`)); }
-    if ($('cr-time').value.trim()) lines.push('Time available: ' + $('cr-time').value.trim());
+    if ($('cr-time').value.trim()) lines.push(TIME_ASK[kind].line + $('cr-time').value.trim());
     if ($('cr-interests').value.trim()) lines.push('What we care about: ' + $('cr-interests').value.trim());
     lines.push('Style: ' + $('cr-style').value + '.');
     if ($('cr-notes').value.trim()) lines.push('Practical notes: ' + $('cr-notes').value.trim());
@@ -1275,8 +1275,15 @@
   }
   const relay = () => { const r = store.get('tp.relay', {}); return { url: String(r.url || '').trim().replace(/\/+$/, ''), code: String(r.code || '').trim() }; };
   const relayReady = () => { const r = relay(); return !!(r.url && r.code); };
+  // The same question means different things for each kind, so it is worded for the kind chosen.
+  const TIME_ASK = {
+    walk: { label: 'How long will you be out walking?', hint: 'About 2 hours, with a coffee stop', line: 'How long we will be out walking: ' },
+    overview: { label: 'How much time will you have in the place?', hint: 'One day in port, mostly free time', line: 'Time we have in the place: ' },
+    deep: { label: 'When will you listen?', hint: 'A long drive tomorrow, about 3 hours', line: 'When we will listen: ' },
+  };
   function syncCreateForm() {
     $('cr-stops-wrap').hidden = $('cr-kind').value !== 'walk';
+    const ta = TIME_ASK[$('cr-kind').value]; $('cr-time-label').textContent = ta.label; $('cr-time').placeholder = ta.hint;
     const ready = relayReady();
     $('cr-send').hidden = !ready;
     $('cr-copy').classList.toggle('ghost', ready); $('cr-copy').classList.toggle('primary', !ready);
@@ -1312,21 +1319,32 @@
     btn.disabled = false;
   }
   let justSent = null;
+  function drawRequests(items, note) {
+    const ul = $('cr-list'); ul.textContent = '';
+    if (justSent && Date.now() - justSent.at < 300000 && !items.some((x) => x.title.replace(/^Episode request:\s*/i, '') === justSent.title)) items = [{ title: justSent.title, state: 'open' }].concat(items);
+    items.forEach((x) => {
+      const li = mk('li', ''), t = mk('span', 'rq-t', x.title.replace(/^Episode request:\s*/i, ''));
+      li.append(t, mk('span', 'rq-s' + (x.state === 'closed' ? ' done' : ''), x.state === 'closed' ? 'Done' : 'Waiting'));
+      ul.append(li);
+    });
+    $('cr-list-note').textContent = note || '';
+    $('cr-recent').hidden = !items.length && !note;
+  }
   async function loadRequests() {
+    const cached = store.get('tp.requests', null);
     try {
-      const res = await fetch(GH_API + '/repos/' + GH_REPO + '/issues?labels=episode-request&state=all&per_page=8');
-      if (!res.ok) return;
-      const items = (await res.json()).filter((x) => !x.pull_request);
-      // GitHub may take a moment to list a request just sent, so keep showing it for a few minutes
-      if (justSent && Date.now() - justSent.at < 300000 && !items.some((x) => x.title.replace(/^Episode request:\s*/i, '') === justSent.title)) items.unshift({ title: justSent.title, state: 'open' });
-      const ul = $('cr-list'); ul.textContent = '';
-      items.forEach((x) => {
-        const li = mk('li', ''), t = mk('span', 'rq-t', x.title.replace(/^Episode request:\s*/i, ''));
-        li.append(t, mk('span', 'rq-s' + (x.state === 'closed' ? ' done' : ''), x.state === 'closed' ? 'Done' : 'Waiting'));
-        ul.append(li);
-      });
-      $('cr-recent').hidden = !items.length;
-    } catch (err) { /* offline or rate limited: the list simply stays as it was */ }
+      const headers = { 'Accept': 'application/vnd.github+json' };
+      if (ghToken()) headers.Authorization = 'Bearer ' + ghToken(); // a saved key lifts GitHub's low limit for anonymous visitors
+      const res = await fetch(GH_API + '/repos/' + GH_REPO + '/issues?labels=episode-request&state=all&per_page=8', { headers });
+      if (!res.ok) throw new Error(String(res.status));
+      const items = (await res.json()).filter((x) => !x.pull_request).map((x) => ({ title: x.title, state: x.state }));
+      store.set('tp.requests', { at: Date.now(), items });
+      drawRequests(items, '');
+    } catch (err) {
+      // GitHub only allows a few anonymous lookups an hour per network, and a ship's Wi-Fi shares one network
+      if (cached && cached.items) drawRequests(cached.items, 'Could not reach GitHub just now. This is the list from ' + new Date(cached.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '. Tap Check again later.');
+      else drawRequests([], 'Could not load your requests just now. GitHub limits lookups on shared Wi-Fi. Tap Check again in a few minutes.');
+    }
   }
 
   function syncPhoneBox() { const b = $('phone-box'); if (b) b.hidden = engine() === 'natural'; }
@@ -2493,6 +2511,7 @@
     $('waitstop').addEventListener('change', (e) => setWait(e.target.checked));
     $('cr-kind').addEventListener('change', () => { syncCreateForm(); $('cr-status').className = 'fine'; $('cr-status').textContent = ''; });
     $('cr-send').addEventListener('click', sendRequest);
+    $('cr-refresh').addEventListener('click', loadRequests);
     $('relay-test').addEventListener('click', async () => {
       const out = $('relay-status');
       store.set('tp.relay', { url: $('relay-url').value.trim(), code: $('relay-code').value.trim() });

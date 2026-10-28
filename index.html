@@ -68,8 +68,8 @@
       <label class="field" id="cr-stops-wrap">Stops, in order (one per line)
         <textarea id="cr-stops" rows="5" placeholder="Markt square&#10;Belfry&#10;Burg square"></textarea>
       </label>
-      <label class="field">Time you have
-        <input id="cr-time" type="text" placeholder="Two hours, leaving the hotel at 10">
+      <label class="field"><span id="cr-time-label">How long will you be out walking?</span>
+        <input id="cr-time" type="text" placeholder="About 2 hours, with a coffee stop">
       </label>
       <label class="field">What you care about
         <input id="cr-interests" type="text" placeholder="History, architecture, a good coffee stop">
@@ -91,7 +91,9 @@
     <p class="fine" id="cr-hint">Paste it into your chat with Claude. To send requests straight from the app, set up the relay in Settings (see relay/README.md in the repository).</p>
     <div id="cr-recent" hidden>
       <h3 class="sec">Your recent requests</h3>
+      <p class="fine" id="cr-list-note" role="status"></p>
       <ul class="req-list" id="cr-list"></ul>
+      <button class="ghost small" id="cr-refresh" type="button">Check again</button>
     </div>
   </section>
 
