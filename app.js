@@ -23,7 +23,7 @@
   };
 
   const settings = Object.assign(
-    { rate: 1, voiceURI: '', wake: true, autonext: true, pron: '', speakerVoices: {}, engine: 'natural' },
+    { rate: 1, voiceURI: '', wake: true, autonext: true, follow: false, pron: '', speakerVoices: {}, engine: 'natural' },
     store.get('tp.settings', {})
   );
   if (settings.engine === 'auto' && !settings.engineChosen) settings.engine = 'natural'; // 'auto' was only ever the old default
@@ -545,7 +545,7 @@
     $('script-btn').setAttribute('aria-pressed', String(on));
     $('script-label').textContent = on ? 'Hide script' : 'Show script';
     if (remember) store.set('tp.walkscript', on);
-    if (on) { following = true; hideFollowPill(); }
+    following = true; syncFollowUi(); updateFollowPill();
   }
 
   // Called whenever the open episode or chapter changes.
@@ -554,7 +554,7 @@
     $('script-btn').hidden = !w;
     $('view-player').classList.toggle('walk-on', !!w);
     if (!w) {
-      wv.hidden = true; $('reader').hidden = false; stopWalkGps();
+      wv.hidden = true; $('reader').hidden = false; stopWalkGps(); syncFollowUi();
       if (walkMap) { walkMap.remove(); walkMap = null; walkPins = []; walkYou = null; }
       walkEpId = ''; return;
     }
@@ -621,7 +621,9 @@
     if (walkYou) { walkYou.dot.remove(); walkYou.ring.remove(); walkYou = null; }
   }
 
-  /* ---------- the script follows what is playing, until you scroll away ---------- */
+  /* ---------- the script and the audio: following is optional ---------- */
+  // Off (the default): the highlight moves but the page never does. A button appears when the spoken sentence is out of
+  // sight, and tapping it takes you there. On: the page scrolls along, until you scroll away yourself.
   let following = true;
   const hideFollowPill = () => { $('follow-pill').hidden = true; };
   function activeVisible() {
@@ -629,13 +631,31 @@
     const r = el.getBoundingClientRect(), tr = $('transport').getBoundingClientRect();
     return r.bottom > 60 && r.top < (tr.top || window.innerHeight);
   }
+  function updateFollowPill() {
+    const scriptOn = view === 'player' && !$('reader').hidden && spans && spans.length;
+    $('follow-pill').hidden = !(scriptOn && !(settings.follow && following) && !activeVisible());
+  }
   function userScrolled() {
     if (view !== 'player' || $('reader').hidden) return;
     following = false;
     clearTimeout(userScrolled.t);
-    userScrolled.t = setTimeout(() => { if (activeVisible()) { following = true; hideFollowPill(); } else $('follow-pill').hidden = false; }, 700);
+    userScrolled.t = setTimeout(() => { if (settings.follow && activeVisible()) following = true; updateFollowPill(); }, 700);
   }
-  function resumeFollow() { following = true; hideFollowPill(); const el = spans.find((x) => x.classList.contains('active')); if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+  function resumeFollow() {
+    following = true; hideFollowPill();
+    const el = spans.find((x) => x.classList.contains('active')); if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+  function syncFollowUi() {
+    const on = !!settings.follow, btn = $('follow-btn');
+    btn.setAttribute('aria-pressed', String(on));
+    $('follow-label').textContent = on ? 'Follow audio: on' : 'Follow audio: off';
+    btn.hidden = $('reader').hidden;
+    const cb = $('follow'); if (cb) cb.checked = on;
+  }
+  function setFollow(on) {
+    settings.follow = on; saveSettings(); following = true; syncFollowUi();
+    if (on) resumeFollow(); else updateFollowPill();
+  }
 
   /* ---------- organizing: remove/hide, place filter, playlists ---------- */
   let hidden = store.get('tp.hidden', []);
@@ -1842,7 +1862,7 @@
       if (curBlobUrl) { URL.revokeObjectURL(curBlobUrl); curBlobUrl = null; }
     }
     $('ch-label').textContent = ch.label;
-    following = true; hideFollowPill();
+    following = true; hideFollowPill(); syncFollowUi();
     drawHero();
     updateScrub(true);
     $('ch-meta').textContent = `${chIdx + 1} of ${ep.chapters.length} · ${mode === 'audio' ? 'natural voice' : naturalOnly(ep) ? 'audio ' + STATE_TEXT[chapterState(ep, chIdx)] : 'phone voice'}`;
@@ -1868,10 +1888,11 @@
     });
     if (!(mode === 'audio' && audioEl.duration)) setBar(units.length ? Math.round((i / units.length) * 100) : 0);
     updateScrub();
-    if (scroll && spans[i] && following) {
+    if (scroll && spans[i] && settings.follow && following) {
       const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       spans[i].scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' });
     }
+    updateFollowPill();
   }
 
   function remember(done) {
@@ -2248,6 +2269,9 @@
     $('map-expand').addEventListener('click', () => openWalkMap());
     $('script-btn').addEventListener('click', () => setScriptShown(!scriptShown, true));
     $('follow-pill').addEventListener('click', resumeFollow);
+    $('follow-btn').addEventListener('click', () => setFollow(!settings.follow));
+    $('follow').addEventListener('change', (e) => setFollow(e.target.checked));
+    window.addEventListener('scroll', () => { clearTimeout(updateFollowPill.t); updateFollowPill.t = setTimeout(updateFollowPill, 250); }, { passive: true });
     ['touchmove', 'wheel'].forEach((t) => window.addEventListener(t, userScrolled, { passive: true }));
     window.addEventListener('keydown', (e) => { if (['PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', 'Home', 'End', ' '].includes(e.key) && !/INPUT|TEXTAREA|SELECT|BUTTON/.test((e.target || {}).tagName || '')) userScrolled(); });
     $('map-close').addEventListener('click', closeWalkMap);
@@ -2304,7 +2328,7 @@
     // settings
     $('settings-btn').addEventListener('click', () => {
       $('engine').value = engine(); syncPhoneBox();
-      $('wake').checked = !!settings.wake; $('autonext').checked = !!settings.autonext; $('pron').value = settings.pron || '';
+      $('wake').checked = !!settings.wake; $('autonext').checked = !!settings.autonext; $('follow').checked = !!settings.follow; $('pron').value = settings.pron || '';
       $('gh-token').value = ghToken(); $('gh-status').textContent = ghToken() ? 'Key saved on this phone.' : 'No key saved. Deleting from GitHub is switched off.';
       loadVoices(); renderSpeakerVoices(); $('dlg-settings').showModal();
     });

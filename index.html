@@ -136,6 +136,7 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
       </button>
       <button class="chip small" id="ver-btn" aria-haspopup="dialog" hidden><span id="ver-label">Version</span></button>
+      <button class="chip small" id="follow-btn" aria-pressed="false" hidden><span id="follow-label">Follow audio: off</span></button>
       <button class="chip small" id="script-btn" aria-pressed="false" hidden><span id="script-label">Show script</span></button>
       <button class="chip small" id="queue-btn" aria-haspopup="dialog"><span id="queue-label">Up next</span></button>
       <button class="chip small" id="sleep-btn" aria-haspopup="dialog"><span id="sleep-label">Sleep</span></button>
@@ -147,7 +148,6 @@
           <div id="walk-map" class="walk-map" role="application" aria-label="Map of the walking tour"></div>
           <div class="mf-fabs">
             <button class="map-fab" id="map-gps" type="button" aria-pressed="false">Show where I am</button>
-            <a class="map-fab" id="map-whole" target="_blank" rel="noopener">Whole walk in Maps</a>
             <button class="map-fab" id="map-expand" type="button">Full screen</button>
           </div>
         </div>
@@ -161,6 +161,7 @@
             <a class="btn-sm" id="mf-dir" target="_blank" rel="noopener">Directions</a>
             <button class="btn-sm ghost" id="mf-play" type="button">Play this stop</button>
           </div>
+          <a class="btn-sm ghost wide-link" id="map-whole" target="_blank" rel="noopener">Open the whole walk in Google Maps</a>
           <p class="fine mf-fine">The dashed line is straight, not the street route. Stop positions are accurate to about 50 meters.</p>
         </section>
       </div>
@@ -326,6 +327,7 @@
     </label>
     <label class="field check"><input type="checkbox" id="wake"> Keep the screen on while playing</label>
     <label class="field check"><input type="checkbox" id="autonext"> Continue into the next chapter</label>
+    <label class="field check"><input type="checkbox" id="follow"> Scroll the script along with the audio</label>
     <div id="phone-box" hidden>
       <h3 class="sec">Phone voice</h3>
       <p class="fine" id="voice-hint">Only used when you choose it above. It stops when you leave the app, and its voices can differ from part to part. Better voices are usually under your phone's text-to-speech settings (for example "Google" or "Enhanced" voices) and appear here once installed.</p>
