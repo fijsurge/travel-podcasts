@@ -367,7 +367,7 @@
           totalCount = jr.data.total_count || 0;
           (jr.data.jobs || []).forEach((j) => {
             got++;
-            const m = /^synth \((.+), (\d+)\)$/.exec(j.name);
+            const m = /^synth \((.+?), (\d+)(?:, [a-z0-9-]+)?\)$/.exec(j.name);
             if (m) audioStatus.jobs.set(m[1] + ':' + m[2], { status: j.status, conclusion: j.conclusion });
             else if (j.name === 'publish' && j.status === 'in_progress') audioStatus.publishing = true;
           });
