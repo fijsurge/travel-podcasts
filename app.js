@@ -33,7 +33,7 @@
 
   /* ---------- episode parsing (same rules as tools/build.py) ---------- */
   const clean = (t) =>
-    t.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').replace(/[*_`]+/g, '').replace(/[ \t]+/g, ' ').trim();
+    t.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').replace(/\s*\[(?:laugh|chuckle|sigh|cough|gasp|groan|sniff|shush|clear throat)\]/gi, '').replace(/[*_`]+/g, '').replace(/[ \t]+/g, ' ').trim();
 
   function parseEpisode(raw, fallbackTitle, id) {
     let meta = {};
