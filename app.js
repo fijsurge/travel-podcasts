@@ -105,7 +105,8 @@
   const ABBR = /\b(?:Mr|Mrs|Ms|Dr|St|Ste|Mt|Jr|Sr|Prof|vs|etc|No|Fr|Gen|Col|Capt|Sgt|Lt|Ft|approx|c|ca)\.$/;
 
   function splitSentences(par) {
-    const raw = par.split(/(?<=[.!?]["'”’)\]]?)\s+(?=["'“‘(]?[A-Z0-9À-ſ])/);
+    // no lookbehind: older iPhones (before iOS 16.4) cannot even load a script that contains one
+    const raw = par.replace(/([.!?]["'”’)\]]?)\s+(?=["'“‘(]?[A-Z0-9À-ſ])/g, '$1\u0001').split('\u0001');
     const merged = [];
     raw.forEach((piece) => {
       const prev = merged[merged.length - 1];
@@ -117,7 +118,7 @@
     merged.forEach((s) => {
       if (s.length <= 260) { out.push(s); return; }
       let cur = '';
-      s.split(/(?<=[,;:])\s+/).forEach((frag) => {
+      s.replace(/([,;:])\s+/g, '$1\u0001').split('\u0001').forEach((frag) => {
         if (cur && (cur + ' ' + frag).length > 220) { out.push(cur); cur = frag; }
         else cur = cur ? cur + ' ' + frag : frag;
       });

@@ -1,5 +1,5 @@
 /* Offline support: files are fetched fresh when online and served from cache when offline. */
-const CACHE = 'travel-podcasts-v8';
+const CACHE = 'travel-podcasts-v9';
 const TILE_CACHE = 'tp-tiles-v1'; // map tiles you have looked at, so the walking map still draws offline
 const MAP_CACHE = 'tp-maps-v1'; // whole-route map tiles saved from the walk screen; never trimmed here
 const AUDIO_CACHE = 'tp-audio-v1'; // filled by the page ("Save for offline"); never deleted here
