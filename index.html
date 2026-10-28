@@ -53,7 +53,7 @@
   <!-- Create -->
   <section id="view-create" class="view" hidden>
     <h2 class="view-h">Ask for a new episode</h2>
-    <p class="lede">Fill in what you know. The app builds a request for Claude, who writes the script. The audio then appears in your library, usually within 30 to 40 minutes.</p>
+    <p class="lede">Fill in what you know. Claude writes the script, and the audio then appears in your library. Allow a few hours for the script and about 40 minutes for the audio.</p>
     <form id="create-form" class="stack" autocomplete="off">
       <label class="field">What kind of episode?
         <select id="cr-kind">
@@ -83,10 +83,16 @@
       <label class="field">Anything practical
         <textarea id="cr-notes" rows="3" placeholder="Hills, weather plan, listening on a shared speaker"></textarea>
       </label>
+      <button class="primary wide" id="cr-send" type="button" hidden>Send to Claude</button>
       <button class="primary wide" id="cr-copy" type="button">Copy request for Claude</button>
     </form>
+    <p class="fine" id="cr-status" role="status"></p>
     <textarea id="cr-out" rows="9" readonly hidden aria-label="Your request"></textarea>
-    <p class="fine" id="cr-hint">Paste it into your chat with Claude. Sending requests straight from the app is the next step.</p>
+    <p class="fine" id="cr-hint">Paste it into your chat with Claude. To send requests straight from the app, set up the relay in Settings (see relay/README.md in the repository).</p>
+    <div id="cr-recent" hidden>
+      <h3 class="sec">Your recent requests</h3>
+      <ul class="req-list" id="cr-list"></ul>
+    </div>
   </section>
 
   <!-- Library -->
@@ -341,6 +347,16 @@
       <p class="fine">One per line, <em>word = how it should be said</em>. Only affects the phone voice. To fix how the natural voices say a name, ask Claude: that change is made once in the repository and the audio is remade for every device.</p>
       <button class="ghost wide" id="test-voice" type="button">Test this voice</button>
     </div>
+    <h3 class="sec">Request relay (optional)</h3>
+    <p class="fine">Lets the Create tab send requests straight to Claude. Ask Patrick for the address and the family code, or follow relay/README.md in the repository. Both stay on this phone only.</p>
+    <label class="field">Relay address
+      <input id="relay-url" type="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://travel-podcasts-relay.example.workers.dev">
+    </label>
+    <label class="field">Family code
+      <input id="relay-code" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
+    </label>
+    <button class="ghost wide" id="relay-test" type="button">Save and test</button>
+    <p class="fine" id="relay-status" role="status"></p>
     <h3 class="sec">GitHub key (optional)</h3>
     <p class="fine">Lets this phone delete episodes from GitHub. The key stays on this phone only. On github.com open Settings, Developer settings, Fine-grained tokens. Choose <em>Only select repositories</em> and pick travel-podcasts. Under Repository permissions set <em>Contents</em> to <em>Read and write</em>. Pick a short expiry.</p>
     <label class="field">Key

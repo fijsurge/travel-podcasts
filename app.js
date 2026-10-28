@@ -1136,7 +1136,7 @@
     const kind = $('cr-kind').value, place = $('cr-place').value.trim();
     const spec = { overview: 'about 12 minutes of audio (roughly 1,800 words), 5 or 6 short chapters', walk: 'about 30 to 40 minutes of audio (roughly 4,500 to 6,000 words), one chapter per stop, with turn-by-turn directions and a short pause cue at each stop', deep: 'about an hour or more of audio (roughly 9,000 words or more), 8 to 10 chapters' }[kind];
     const lines = [
-      'Please write a new Travel Podcasts episode and add it to the travel-podcasts repo, in the same format as the existing episodes (front matter with title, place, order, blurb, speakers, voices and format, then a Welcome and numbered Chapters, then Sources consulted).',
+      'Please write a new Travel Podcasts episode and add it to the travel-podcasts repo. Follow tools/STYLE.md and the format of the existing episodes (front matter with title, place, order, blurb, speakers, voices and format, then a Welcome and numbered Chapters, then Sources consulted). Two-host episodes use Anna and Ben with engine: chatterbox; walking tours also need stops: (latitude,longitude for each stop) and hints: (one line on how to find each stop).',
       '',
       `Format: ${FORMATS[kind].label} (format: ${kind}), ${spec}.`,
       `Place: ${place || '(not given)'}`,
@@ -1147,10 +1147,52 @@
     if ($('cr-interests').value.trim()) lines.push('What we care about: ' + $('cr-interests').value.trim());
     lines.push('Style: ' + $('cr-style').value + '.');
     if ($('cr-notes').value.trim()) lines.push('Practical notes: ' + $('cr-notes').value.trim());
-    lines.push('', 'Research the facts on the web, keep to what the sources support, and list them under Sources consulted. Write years as numerals, except three-digit years, which are spelled out in words. Push it to main so the audio is built automatically, and tell me when it is ready.');
+    lines.push('', 'Research the facts on the web, keep to what the sources support, and list them under Sources consulted. Write years as numerals, except three-digit years, which are spelled out in words. Push it to main so the audio is built automatically.');
     return lines.join('\n');
   }
-  function syncCreateForm() { $('cr-stops-wrap').hidden = $('cr-kind').value !== 'walk'; }
+  const relay = () => { const r = store.get('tp.relay', {}); return { url: String(r.url || '').trim().replace(/\/+$/, ''), code: String(r.code || '').trim() }; };
+  const relayReady = () => { const r = relay(); return !!(r.url && r.code); };
+  function syncCreateForm() {
+    $('cr-stops-wrap').hidden = $('cr-kind').value !== 'walk';
+    const ready = relayReady();
+    $('cr-send').hidden = !ready;
+    $('cr-copy').classList.toggle('ghost', ready); $('cr-copy').classList.toggle('primary', !ready);
+    $('cr-copy').textContent = ready ? 'Copy the request instead' : 'Copy request for Claude';
+    $('cr-hint').hidden = ready;
+    if (ready) loadRequests();
+  }
+  async function relayPost(body) {
+    const r = relay();
+    const res = await fetch(r.url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Family-Code': r.code }, body: JSON.stringify(body) });
+    let data = null; try { data = await res.json(); } catch (e) { /* not json */ }
+    return { ok: res.ok && !!(data && data.ok), status: res.status, data };
+  }
+  async function sendRequest() {
+    const place = $('cr-place').value.trim();
+    if (!place) { $('cr-status').textContent = 'Say which place the episode is about first.'; $('cr-place').focus(); return; }
+    const btn = $('cr-send'), out = $('cr-status');
+    btn.disabled = true; out.textContent = 'Sending\u2026';
+    try {
+      const r = await relayPost({ title: FORMATS[$('cr-kind').value].label + ': ' + place, text: buildRequest() });
+      if (r.ok) { out.textContent = 'Sent. Claude will pick it up, usually within a few hours.'; showToast('Request sent.'); loadRequests(); }
+      else out.textContent = (r.data && r.data.error) || ('The relay answered ' + r.status + '.');
+    } catch (err) { out.textContent = 'Could not reach the relay. Check your connection, then try again.'; }
+    btn.disabled = false;
+  }
+  async function loadRequests() {
+    try {
+      const res = await fetch(GH_API + '/repos/' + GH_REPO + '/issues?labels=episode-request&state=all&per_page=8');
+      if (!res.ok) return;
+      const items = (await res.json()).filter((x) => !x.pull_request);
+      const ul = $('cr-list'); ul.textContent = '';
+      items.forEach((x) => {
+        const li = mk('li', ''), t = mk('span', 'rq-t', x.title.replace(/^Episode request:\s*/i, ''));
+        li.append(t, mk('span', 'rq-s' + (x.state === 'closed' ? ' done' : ''), x.state === 'closed' ? 'Done' : 'Waiting'));
+        ul.append(li);
+      });
+      $('cr-recent').hidden = !items.length;
+    } catch (err) { /* offline or rate limited: the list simply stays as it was */ }
+  }
 
   function syncPhoneBox() { const b = $('phone-box'); if (b) b.hidden = engine() === 'natural'; }
 
@@ -2293,6 +2335,18 @@
     let st = null;
     $('search-input').addEventListener('input', (e) => { clearTimeout(st); st = setTimeout(() => runSearch(e.target.value), 120); });
     $('cr-kind').addEventListener('change', syncCreateForm);
+    $('cr-send').addEventListener('click', sendRequest);
+    $('relay-test').addEventListener('click', async () => {
+      const out = $('relay-status');
+      store.set('tp.relay', { url: $('relay-url').value.trim(), code: $('relay-code').value.trim() });
+      if (!relayReady()) { out.textContent = 'Enter both the address and the family code.'; return; }
+      out.textContent = 'Testing\u2026';
+      try {
+        const r = await relayPost({ ping: true });
+        out.textContent = r.ok ? 'Connected. The Create tab now has Send to Claude.' : ((r.data && r.data.error) || ('The relay answered ' + r.status + '.'));
+      } catch (err) { out.textContent = 'Could not reach that address. Check it for typing mistakes.'; }
+      syncCreateForm();
+    });
     $('cr-copy').addEventListener('click', async () => {
       const text = buildRequest();
       const out = $('cr-out'); out.value = text; out.hidden = false;
@@ -2329,6 +2383,7 @@
     $('settings-btn').addEventListener('click', () => {
       $('engine').value = engine(); syncPhoneBox();
       $('wake').checked = !!settings.wake; $('autonext').checked = !!settings.autonext; $('follow').checked = !!settings.follow; $('pron').value = settings.pron || '';
+      $('relay-url').value = relay().url; $('relay-code').value = relay().code; $('relay-status').textContent = relayReady() ? 'Saved on this phone.' : '';
       $('gh-token').value = ghToken(); $('gh-status').textContent = ghToken() ? 'Key saved on this phone.' : 'No key saved. Deleting from GitHub is switched off.';
       loadVoices(); renderSpeakerVoices(); $('dlg-settings').showModal();
     });

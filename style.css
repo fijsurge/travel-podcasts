@@ -475,3 +475,8 @@ dialog.map-full[open] { display: flex; flex-direction: column; }
 .walk-view.inline .mf-mapwrap { height: clamp(150px, 23dvh, 230px); }
 .walk-view.inline #map-whole { display: inline-flex; }
 #follow-btn[aria-pressed="true"] { border-color: var(--signal); box-shadow: inset 0 0 0 1px var(--signal); }
+
+.req-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.req-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.rq-s { flex: none; font-size: .85rem; font-weight: 650; color: var(--ink-soft, var(--ink)); }
+.rq-s.done { color: var(--accent); }
