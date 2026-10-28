@@ -364,6 +364,16 @@ def cmd_finalize(_args):
                 meta = json.loads(jp.read_text(encoding="utf-8"))
                 chapters[str(n)] = {"hash": meta["hash"], "duration": meta["duration"], "bytes": mp3.stat().st_size}
             manifest["episodes"][d.name] = {"chapters": chapters}
+    repo_kb = os.environ.get("REPO_KB", "").strip()
+    if repo_kb.isdigit():  # repository size from GitHub (history included), for the app's storage meter
+        manifest["usage"] = {"repoKB": int(repo_kb), "at": int(__import__("time").time())}
+    elif (AUDIO / "manifest.json").exists():  # keep the last known figure when it cannot be read now
+        try:
+            old = json.loads((AUDIO / "manifest.json").read_text(encoding="utf-8")).get("usage")
+            if old:
+                manifest["usage"] = old
+        except ValueError:
+            pass
     AUDIO.mkdir(exist_ok=True)
     (AUDIO / "manifest.json").write_text(json.dumps(manifest, separators=(",", ":")), encoding="utf-8")
     n = sum(len(e["chapters"]) for e in manifest["episodes"].values())

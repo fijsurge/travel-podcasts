@@ -131,7 +131,11 @@ jobs:
           pattern: audio-*
           path: incoming
       - name: Rebuild library and audio manifest, commit, push
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          REPO_KB=$(gh api "repos/$GITHUB_REPOSITORY" -q .size 2>/dev/null || true)
+          export REPO_KB
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           assemble() {

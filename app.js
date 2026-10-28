@@ -330,22 +330,50 @@
     }
   }
 
+  // Storage: GitHub Pages and a repository both stay comfortable up to about 1 GB. Audio is the only thing that grows.
+  const STORAGE_LIMIT_MB = 1000;
+  function renderStorage(host) {
+    if (!host) return;
+    host.textContent = '';
+    const eps = (audioManifest && audioManifest.episodes) || {};
+    let bytes = 0, secs = 0;
+    Object.values(eps).forEach((e) => Object.values(e.chapters || {}).forEach((c) => { bytes += c.bytes || 0; secs += c.duration || 0; }));
+    if (!bytes) { host.append(mk('p', 'fine', 'No audio has been made yet.')); return; }
+    const audioMB = bytes / 1048576, hours = secs / 3600;
+    const u = audioManifest && audioManifest.usage, repoMB = u && u.repoKB ? u.repoKB / 1024 : null;
+    const used = Math.max(audioMB, repoMB || 0), pct = Math.min(100, Math.round((used / STORAGE_LIMIT_MB) * 100));
+    const mbPerHour = audioMB / hours, room = Math.max(0, (STORAGE_LIMIT_MB - used) / mbPerHour);
+    const mb = (x) => Math.round(x).toLocaleString() + ' MB';
+    const meter = mk('div', 'meter ' + (pct >= 85 ? 'high' : pct >= 60 ? 'warn' : ''), '');
+    meter.setAttribute('role', 'img'); meter.setAttribute('aria-label', pct + ' percent of the storage limit used');
+    const fill = mk('i', '', ''); fill.style.width = Math.max(2, pct) + '%'; meter.append(fill);
+    host.append(mk('p', 'stor-head', pct + '% of the storage limit used'), meter);
+    host.append(mk('p', 'fine', 'Audio on the site: ' + mb(audioMB) + ' (' + hours.toFixed(1) + ' hours).' + (repoMB ? ' Whole repository, including every older version of the audio: ' + mb(repoMB) + '.' : '') + ' The limit is about ' + mb(STORAGE_LIMIT_MB) + '.'));
+    host.append(mk('p', 'fine', pct >= 85 ? 'Nearly full. Ask Claude to tidy the history before making more.' : 'Room for about ' + Math.floor(room) + ' more hours of new audio. Remaking existing audio uses room faster, because GitHub keeps every old version.'));
+  }
+
   function openAudioDetails() {
     const box = $('as-list'); box.textContent = '';
+    let shown = 0;
     library.filter((e) => !e.user).forEach((e) => {
-      const sm = episodeAudioSummary(e);
-      const h = mk('h3', '', e.title); box.append(h);
+      const rows = [];
+      e.chapters.forEach((c, n) => { const st = chapterState(e, n); if (st !== 'ready') rows.push({ c, st }); });
+      if (!rows.length) return;
+      shown++;
+      const done = e.chapters.length - rows.length;
+      box.append(mk('h3', '', e.title), mk('p', 'fine', done + ' of ' + e.chapters.length + ' parts ready'));
       const ul = mk('ul', 'as-rows', '');
-      e.chapters.forEach((c, n) => {
-        const st = chapterState(e, n);
-        const li = mk('li', 'as-row ' + (st === 'ready' ? 'ready' : st), '');
-        li.append(mk('span', 'dot', ''), mk('span', 'as-label', c.label), mk('small', '', st === 'ready' ? 'ready' : STATE_TEXT[st]));
+      rows.forEach(({ c, st }) => {
+        const li = mk('li', 'as-row ' + st, '');
+        li.append(mk('span', 'dot', ''), mk('span', 'as-label', c.label), mk('small', '', STATE_TEXT[st]));
         ul.append(li);
       });
       box.append(ul);
     });
+    if (!shown) box.append(mk('p', '', 'Nothing is being made. Every episode is ready.'));
     const when = audioStatus.at ? new Date(audioStatus.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'not yet';
     $('as-updated').textContent = 'Last checked ' + when + '. This page checks again by itself.';
+    renderStorage($('as-storage'));
     $('dlg-audio').showModal();
   }
 
@@ -2561,6 +2589,7 @@
       $('wake').checked = !!settings.wake; $('autonext').checked = !!settings.autonext; $('follow').checked = !!settings.follow; $('waitstop').checked = !!settings.waitStop; $('pron').value = settings.pron || '';
       $('relay-url').value = relay().url; $('relay-code').value = relay().code; $('relay-status').textContent = relayReady() ? 'Saved on this phone.' : '';
       $('gh-token').value = ghToken(); $('gh-status').textContent = ghToken() ? 'Key saved on this phone.' : 'No key saved. Deleting from GitHub is switched off.';
+      renderStorage($('storage'));
       loadVoices(); renderSpeakerVoices(); $('dlg-settings').showModal();
     });
     $('gh-check').addEventListener('click', () => { store.set('tp.gh', { token: $('gh-token').value.trim() }); checkGh(); });
