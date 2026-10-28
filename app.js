@@ -374,8 +374,12 @@
           page++;
         } while (got < totalCount && page < 4);
       }
-      audioStatus.known = true; audioStatus.at = Date.now();
-    } catch (err) { /* offline or rate limited: keep what we know */ }
+      audioStatus.known = true; audioStatus.at = Date.now(); audioStatus.failures = 0;
+    } catch (err) {
+      // offline or rate limited (GitHub allows few anonymous requests): keep what we know for a while, then stop trusting it
+      audioStatus.failures = (audioStatus.failures || 0) + 1;
+      if (audioStatus.known && Date.now() - audioStatus.at > 10 * 60 * 1000) { audioStatus.known = false; audioStatus.active = false; audioStatus.jobs = new Map(); }
+    }
     if (wasActive && !audioStatus.active) audioStatus.fastUntil = Date.now() + 6 * 60 * 1000;
     renderAudioStatus();
   }
@@ -393,21 +397,31 @@
     return true;
   }
 
+  // The manifest is a plain file, so it can be re-read often and never hits GitHub's request limit.
+  async function refreshAudioManifest() {
+    try {
+      const r = await fetch('audio/manifest.json', { cache: 'no-cache' });
+      if (r.ok) audioManifest = await r.json();
+    } catch (err) { /* offline: keep the last one */ }
+  }
+
   let audioTimer = null;
   function scheduleAudioPoll(delay) {
     clearTimeout(audioTimer);
     audioTimer = setTimeout(async () => {
       if (document.visibilityState === 'visible') {
-        await pollAudioStatus();
+        await refreshAudioManifest();
+        if (needsAudio()) await pollAudioStatus(); else { audioStatus.active = false; renderAudioStatus(); }
         if (!audioStatus.active && needsAudio()) await refreshLibrary(); // run finished: pick up the new files
       }
       const fast = audioStatus.active || (audioStatus.fastUntil && Date.now() < audioStatus.fastUntil);
-      if (needsAudio() || audioStatus.active) scheduleAudioPoll(fast ? 30000 : 300000);
+      const slow = audioStatus.failures ? 600000 : 300000;
+      if (needsAudio() || audioStatus.active) scheduleAudioPoll(fast ? 120000 : slow);
     }, delay);
   }
   function startAudioWatch() {
     if (!needsAudio()) return;
-    pollAudioStatus().then(() => scheduleAudioPoll(audioStatus.active ? 30000 : 300000));
+    pollAudioStatus().then(() => scheduleAudioPoll(audioStatus.active ? 120000 : 300000));
   }
 
   /* ---------- organizing: remove/hide, place filter, playlists ---------- */
