@@ -506,9 +506,9 @@
       const a = mk('a', 'btn-sm', 'Directions'); a.href = dirUrl(st); a.target = '_blank'; a.rel = 'noopener';
       const pl = mk('button', 'btn-sm ghost', 'Play this stop'); pl.type = 'button';
       pl.addEventListener('click', () => { $('dlg-map').close(); gotoChapter(st.ch, true); });
-      const sh = mk('button', 'btn-sm ghost', 'Show on map'); sh.type = 'button';
-      sh.addEventListener('click', () => selectStop(k, true));
-      acts.append(a, pl, sh); li.append(acts); ol.append(li);
+      acts.append(a, pl); li.append(acts);
+      li.addEventListener('click', (ev) => { if (!ev.target.closest('a, button')) selectStop(k, true); });
+      ol.append(li);
     });
     $('map-whole').href = wholeWalkUrl(w.stops);
   }
