@@ -411,7 +411,8 @@ dialog.wide-dlg { width: min(96vw, 42rem); }
 .walk-map .leaflet-container { font: inherit; }
 .walk-map.offline { display: grid; place-items: center; padding: 20px; text-align: center; color: var(--muted); }
 .map-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.map-tools .fine { margin: 0; }
+.map-tools .fine { margin: 0; flex-basis: 100%; }
+.map-tools a.chip { text-decoration: none; color: var(--ink); }
 .walk-stops { list-style: none; margin: 4px 0; padding: 0; display: grid; gap: 8px; }
 .walk-stops li { display: grid; grid-template-columns: 36px 1fr; gap: 4px 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
 .walk-stops li[aria-current="true"] { border-color: var(--signal); box-shadow: inset 0 0 0 1px var(--signal); }
