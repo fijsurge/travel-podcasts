@@ -165,6 +165,10 @@
             <button class="btn-sm ghost" id="arrive-x" type="button">Not now</button>
           </div>
         </div>
+        <div class="mf-start" id="walk-start" hidden>
+          <button class="primary wide" id="walk-go" type="button">Start the walk</button>
+          <p class="fine">Turns on your location, keeps the screen awake, and pauses at each stop until you get there.</p>
+        </div>
         <div class="mf-mapwrap">
           <div id="walk-map" class="walk-map" role="application" aria-label="Map of the walking tour"></div>
           <div class="mf-fabs">
@@ -178,15 +182,18 @@
           <p class="mf-leg" id="mf-leg"></p>
           <p class="mf-how" id="mf-how"></p>
           <p class="mf-gps" id="map-gps-note"></p>
-          <label class="mf-wait"><input type="checkbox" id="walk-wait"> Pause at each stop until I arrive</label>
           <div class="mf-acts">
             <a class="btn-sm" id="mf-dir" target="_blank" rel="noopener">Directions</a>
             <button class="btn-sm ghost" id="mf-play" type="button">Play this stop</button>
           </div>
+          <details class="mf-more" id="mf-more">
+            <summary>More options</summary>
+          <label class="mf-wait"><input type="checkbox" id="walk-wait"> Pause at each stop until I arrive</label>
           <a class="btn-sm ghost wide-link" id="map-whole" target="_blank" rel="noopener">Open the whole walk in Google Maps</a>
           <button class="btn-sm ghost wide-link" id="map-save" type="button">Save map for offline</button>
           <button class="btn-sm ghost wide-link" id="walk-report" type="button">Report a problem with this stop</button>
           <p class="fine mf-fine">The dashed line is straight, not the street route. Stop positions are accurate to about 50 meters.</p>
+          </details>
         </section>
       </div>
     </div>

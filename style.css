@@ -450,7 +450,6 @@ dialog.map-full[open] { display: flex; flex-direction: column; }
 .walk-view.inline .mf-panel { border-top: 1px solid var(--line); padding: 10px 12px 12px; }
 .walk-view.inline .mf-name { font-size: 1.1rem; }
 .walk-view.inline .mf-how { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.walk-view.inline .mf-fine, .walk-view.inline #map-whole { display: none; }
 .walk-view.inline .mf-acts .btn-sm { min-height: 44px; }
 .walk-view.full { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .walk-view.full .mf-mapwrap { flex: 1 1 auto; }
@@ -525,3 +524,11 @@ dialog.map-full[open] { display: flex; flex-direction: column; }
 .update-bar .btn-sm { background: var(--bg); color: var(--ink); border-color: var(--bg); min-height: 40px; }
 .badge-new { position: absolute; right: 8px; top: 8px; padding: 2px 9px; border-radius: 999px; font-size: .75rem; font-weight: 700; background: var(--signal); color: #08141b; }
 .rq-s.link { cursor: pointer; font: inherit; font-size: .85rem; font-weight: 650; min-height: 36px; padding: 0 12px; background: transparent; border: 1px solid var(--accent); border-radius: 999px; }
+
+/* simpler walk screen: start button, and the extras tucked under "More options" */
+.mf-start { padding: 12px 12px 4px; }
+.mf-start .primary { min-height: 52px; font-size: 1.05rem; }
+.mf-start .fine { margin: 6px 0 0; }
+.mf-more { margin-top: 8px; border-top: 1px solid var(--line); }
+.mf-more summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--muted); font-size: .92rem; font-weight: 600; }
+.mf-more[open] summary { margin-bottom: 2px; }

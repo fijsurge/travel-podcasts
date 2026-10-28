@@ -686,7 +686,19 @@
   }
   function beginWait(k) { waitFor = k; arrivedHits = 0; arrivePrompt = null; chime(); buzz([150]); syncArrive(); }
 
+  // The one-tap start: only before the walk has begun (still on the welcome part, nothing playing).
+  function syncStart() {
+    const w = walkState(), box = $('walk-start'); if (!box) return;
+    box.hidden = !(w && w.cur < 0 && !playing);
+  }
+  function startWalk() {
+    settings.waitStop = true; settings.wake = true; saveSettings();
+    $('walk-wait').checked = true; $('waitstop').checked = true; $('wake').checked = true;
+    walkPref.setGps(true); if (walkWatch == null) startWalkGps(false);
+    play();
+  }
   function syncArrive() {
+    syncStart();
     const box = $('walk-arrive'), w = walkState(); if (!box) return;
     const k = waitingStop();
     if (arrivePrompt != null && (!w || w.cur >= arrivePrompt)) arrivePrompt = null;
@@ -2661,6 +2673,7 @@
     let st = null;
     $('search-input').addEventListener('input', (e) => { clearTimeout(st); st = setTimeout(() => runSearch(e.target.value), 120); });
     $('arrive-go').addEventListener('click', arriveGo);
+    $('walk-go').addEventListener('click', startWalk);
     $('arrive-x').addEventListener('click', () => { arrivePrompt = null; syncArrive(); });
     $('map-save').addEventListener('click', onSaveMap);
     $('report-btn').addEventListener('click', () => openReport(false));
