@@ -27,6 +27,7 @@
   </button>
 </header>
 
+<div class="offline-bar" id="offline-bar" role="status" hidden>You are offline. Saved episodes and maps still work, and requests wait until you are back online.</div>
 <div class="update-bar" id="update-bar" role="status" hidden>
   <span>A new version is ready.</span>
   <button class="btn-sm" id="update-now" type="button">Update now</button>
@@ -414,6 +415,7 @@
     <h3 class="sec">Library storage</h3>
     <div id="storage"></div>
     <h3 class="sec">This app</h3>
+    <button class="ghost wide" id="share-app" type="button">Share this app with someone</button>
     <p class="fine" id="app-version"></p>
     <button class="ghost wide" id="app-reload" type="button">Get the newest version now</button>
     <button class="primary wide" value="close">Done</button>

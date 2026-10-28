@@ -1124,21 +1124,69 @@
     } catch (err) { showToast('Saving stopped. Check your connection and tap again; nothing is lost.'); }
     packBusy.delete(p.place); await refreshOffline(); renderLibrary();
   }
+  // Location permission, as far as this browser will tell us. Safari cannot always say, so "unknown" is a real state.
+  let geoPerm = 'unknown';
+  try {
+    if (navigator.permissions && navigator.permissions.query) navigator.permissions.query({ name: 'geolocation' }).then((s) => {
+      geoPerm = s.state; s.onchange = () => { geoPerm = s.state; if (view === 'home') renderLibrary(); };
+    }).catch(() => {});
+  } catch (e) { /* optional */ }
+  function askLocation() {
+    if (!navigator.geolocation) { showToast('This browser cannot share a location.'); return; }
+    navigator.geolocation.getCurrentPosition(() => { geoPerm = 'granted'; renderLibrary(); showToast('Location is on.'); }, (err) => {
+      if (err.code === 1) { geoPerm = 'denied'; showToast('Location is blocked. Allow it for this site in your phone\u2019s browser settings.'); }
+      else showToast('Could not find you just now. Try again outside.');
+      renderLibrary();
+    }, { timeout: 20000, maximumAge: 60000 });
+  }
+  async function savePackMaps(p) {
+    if (packBusy.has(p.place)) return;
+    try {
+      for (const e of p.eps.filter((x) => stopsOf(x).length && !savedMaps()[x.id])) { packBusy.set(p.place, 'Saving maps\u2026'); renderLibrary(); await saveWalkMap(e); }
+      showToast('Walking maps for ' + p.place + ' are saved.');
+    } catch (err) { showToast('Saving the maps stopped. Check your connection and try again.'); }
+    packBusy.delete(p.place); renderLibrary();
+  }
+  function packChecks(p) {
+    const walks = p.eps.filter((x) => stopsOf(x).length);
+    const row = mk('div', 'pack-check', '');
+    const item = (ok, text, fix, fixLabel) => {
+      const s = mk('span', 'pc ' + (ok ? 'ok' : 'todo'), '');
+      s.append(mk('span', 'pc-i', ok ? '\u2713' : '\u2717'), document.createTextNode(' ' + text));
+      if (!ok && fix) { const b = mk('button', 'pc-fix', fixLabel); b.type = 'button'; b.disabled = !online() && fixLabel !== 'Allow'; b.addEventListener('click', fix); s.append(b); }
+      row.append(s);
+    };
+    item(!p.todo.length, 'Audio', () => savePack(p), 'Save');
+    if (walks.length) {
+      item(walks.every((x) => savedMaps()[x.id]), 'Maps', () => savePackMaps(p), 'Save');
+      item(geoPerm === 'granted', 'Location', askLocation, 'Allow');
+    }
+    return row;
+  }
   function renderPacks(box, list) {
-    const packs = tripPacks(list); if (!packs.length) return;
+    const packs = tripPacks(list).filter((p) => !placeFilter || p.place === placeFilter).slice(0, placeFilter ? 1 : 4);
+    if (!packs.length) return;
     const sec = mk('section', 'shelf packs', '');
     sec.append(mk('h2', '', 'Get ready for a trip'), mk('p', 'sub', 'Saves every episode and the walking maps for a place, so they work with no signal.'));
-    packs.slice(0, placeFilter ? 1 : 4).forEach((p) => {
-      if (placeFilter && p.place !== placeFilter) return;
-      const row = mk('div', 'pack', ''), t = mk('span', 'pack-t', '');
+    packs.forEach((p) => {
+      const row = mk('div', 'pack', ''), top = mk('div', 'pack-top', ''), t = mk('span', 'pack-t', '');
       const busy = packBusy.get(p.place);
       t.append(mk('span', 'pack-n', p.place), mk('small', '', `${p.eps.length} episode${p.eps.length > 1 ? 's' : ''} \u00b7 ` + (p.todo.length ? `about ${Math.max(1, Math.round(p.mb))} MB to save` : 'all saved on this phone')));
-      const b = mk('button', p.todo.length ? 'btn-sm' : 'btn-sm ghost', busy || (p.todo.length ? 'Save for the trip' : 'Saved'));
-      b.type = 'button'; b.disabled = !!busy || !p.todo.length;
+      const b = mk('button', p.todo.length ? 'btn-sm' : 'btn-sm ghost', busy || (p.todo.length ? (online() ? 'Save for the trip' : 'Needs a connection') : 'Saved'));
+      b.type = 'button'; b.disabled = !!busy || !p.todo.length || !online();
       b.addEventListener('click', () => savePack(p));
-      row.append(t, b); sec.append(row);
+      top.append(t, b); row.append(top, packChecks(p)); sec.append(row);
     });
-    if (sec.children.length > 2) box.append(sec);
+    box.append(sec);
+  }
+
+  /* ---------- connection: a banner when offline, and the outbox goes out when it comes back ---------- */
+  const online = () => navigator.onLine !== false;
+  function syncOnline() {
+    const bar = $('offline-bar'); if (bar) bar.hidden = online();
+    if (view === 'create') syncCreateForm();
+    if (view === 'home' || view === 'library') renderLibrary();
+    if (online()) flushOutbox();
   }
 
   /* ---------- first-run welcome: three things worth knowing, shown once ---------- */
@@ -1149,7 +1197,7 @@
     sec.append(mk('h2', '', 'Welcome'));
     const ul = mk('ul', '', '');
     const li = (head, text) => { const l = mk('li', ''); l.append(mk('strong', '', head + ' '), document.createTextNode(text)); ul.append(l); };
-    if (!installed) li('Put it on your home screen.', 'In Chrome, open the menu and choose Add to Home screen. It then opens like any other app.');
+    if (!installed) li('Put it on your home screen.', 'On iPhone, tap Share in Safari, then Add to Home Screen. In Chrome on Android, open the menu and choose Add to Home screen. It then opens like any other app.');
     li('Ask for what you need.', 'The Create tab sends a request for an overview, a walking tour or a deep dive. It is written and voiced within a few hours.');
     li('Save before you leave Wi-Fi.', 'Under Get ready for a trip, tap Save for the trip. Everything for that place then plays with no signal, maps included.');
     sec.append(ul);
@@ -1406,6 +1454,7 @@
     $('cr-send').hidden = !ready;
     $('cr-copy').classList.toggle('ghost', ready); $('cr-copy').classList.toggle('primary', !ready);
     $('cr-copy').textContent = ready ? 'Copy the request instead' : 'Copy request for Claude';
+    $('cr-send').textContent = online() ? 'Send to Claude' : 'Save to send when online';
     $('cr-hint').hidden = ready;
     if (ready) loadRequests();
   }
@@ -1420,21 +1469,53 @@
     if (!place) { $('cr-status').textContent = 'Say which place the episode is about first.'; $('cr-place').focus(); return; }
     const btn = $('cr-send'), out = $('cr-status');
     btn.disabled = true; out.textContent = 'Sending\u2026';
+    const label = FORMATS[$('cr-kind').value].label + ': ' + place;
+    const body = { title: label, text: buildRequest() };
+    const done = (queued) => {
+      out.className = 'cr-ok';
+      out.textContent = queued
+        ? 'No connection right now. Your request is saved on this phone as "' + label + '" and goes out by itself the next time the app is open with a connection. You can ask for another.'
+        : 'Sent: ' + label + '. Claude picks requests up five times a day. The form is clear, so you can ask for another.';
+      showToast(queued ? 'Saved. Will send when you are online.' : 'Request sent.');
+      $('create-form').reset(); $('cr-out').hidden = true; syncCreateForm();
+      justSent = { title: label, at: Date.now() };
+      loadRequests();
+      out.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      if (!queued) setTimeout(loadRequests, 3000);
+    };
     try {
-      const label = FORMATS[$('cr-kind').value].label + ': ' + place;
-      const r = await relayPost({ title: label, text: buildRequest() });
-      if (r.ok) {
-        out.className = 'cr-ok';
-        out.textContent = 'Sent: ' + label + '. Claude picks requests up five times a day. The form is clear, so you can ask for another.';
-        showToast('Request sent.');
-        $('create-form').reset(); $('cr-out').hidden = true; syncCreateForm();
-        justSent = { title: label, at: Date.now() };
-        loadRequests();
-        out.scrollIntoView({ block: 'center', behavior: 'smooth' });
-        setTimeout(loadRequests, 3000);
-      } else { out.className = 'fine'; out.textContent = (r.data && r.data.error) || ('The relay answered ' + r.status + '.'); }
-    } catch (err) { out.className = 'fine'; out.textContent = 'Could not reach the relay. Check your connection, then try again.'; }
+      if (!navigator.onLine) throw new TypeError('offline');
+      const r = await relayPost(body);
+      if (r.ok) done(false);
+      else { out.className = 'fine'; out.textContent = (r.data && r.data.error) || ('The relay answered ' + r.status + '.'); }
+    } catch (err) { queueOutbox({ kind: 'request', title: label, body }); done(true); }
     btn.disabled = false;
+  }
+
+  /* ---------- outbox: requests made with no connection wait on the phone and go out later ---------- */
+  const outbox = () => store.get('tp.outbox', []) || [];
+  function queueOutbox(item) { const q = outbox(); q.push(Object.assign({ id: Date.now() + '-' + Math.random().toString(36).slice(2, 6), at: Date.now() }, item)); store.set('tp.outbox', q); }
+  const dropOutbox = (id) => store.set('tp.outbox', outbox().filter((x) => x.id !== id));
+  let flushing = false;
+  async function flushOutbox() {
+    if (flushing || !relayReady() || !outbox().length || !navigator.onLine) return;
+    flushing = true;
+    try {
+      for (const item of outbox()) {
+        let r;
+        try { r = item.kind === 'report' ? await postReport(item.title, item.lines) : await relayPost(item.body); } catch (err) { break; } // still no connection: try again later
+        if (r.ok) { dropOutbox(item.id); showToast('Sent: ' + item.title); justSent = { title: item.title, at: Date.now() }; }
+        else if (r.status === 429 || r.status >= 500) break;                    // relay busy or down: keep it
+        else { dropOutbox(item.id); showToast('A saved request was refused: ' + ((r.data && r.data.error) || r.status)); }
+      }
+    } finally { flushing = false; }
+    if (view === 'create') loadRequests();
+  }
+  // A newer relay files reports under their own label; an older one gets a request titled "Problem report:".
+  async function postReport(title, lines) {
+    const p = await relayPost({ ping: true });
+    const legacy = p.ok && !(p.data && p.data.feedback);
+    return relayPost(legacy ? { title: 'Problem report: ' + title, text: 'PROBLEM REPORT (not an episode request)\n' + lines.join('\n') } : { kind: 'feedback', title, text: lines.join('\n') });
   }
 
   // ---- Report a problem: goes through the same relay as episode requests, labelled "episode-feedback" ----
@@ -1476,16 +1557,16 @@
     if (c.stop) lines.push('Stop selected on the map: ' + (c.stop.k + 1) + ', ' + c.stop.name + ' (pin now at ' + c.stop.lat + ', ' + c.stop.lon + ')');
     lines.push('', 'What the listener said: ' + note);
     $('rp-send').disabled = true; out.textContent = 'Sending\u2026';
+    const title = names[k] + ': ' + c.title + ', ' + c.chapter;
     try {
-      // A newer relay files this under its own label. An older one has no such label, so the report goes in as a
-      // request whose title starts "Problem report:", which the scheduled task also treats as a report.
-      const p = await relayPost({ ping: true });
-      const legacy = p.ok && !(p.data && p.data.feedback);
-      const title = names[k] + ': ' + c.title + ', ' + c.chapter;
-      const r = await relayPost(legacy ? { title: 'Problem report: ' + title, text: 'PROBLEM REPORT (not an episode request)\n' + lines.join('\n') } : { kind: 'feedback', title, text: lines.join('\n') });
+      if (!navigator.onLine) throw new TypeError('offline');
+      const r = await postReport(title, lines);
       if (r.ok) { $('dlg-report').close(); showToast('Report sent. Claude will fix it on the next pass.'); return; }
-      out.textContent = (r.data && r.data.error) || ('The relay answered ' + r.status + '. If it keeps failing, the relay may need updating (see the relay README).');
-    } catch (err) { out.textContent = 'Could not reach the relay. Check your connection and try again.'; }
+      out.textContent = (r.data && r.data.error) || ('The relay answered ' + r.status + '.');
+    } catch (err) {
+      queueOutbox({ kind: 'report', title: 'Problem report: ' + title, lines });
+      $('dlg-report').close(); showToast('No connection. The report is saved and will send when you are online.'); return;
+    }
     $('rp-send').disabled = false;
   }
   let justSent = null;
@@ -1501,6 +1582,8 @@
   }
   function drawRequests(items, note) {
     const ul = $('cr-list'); ul.textContent = '';
+    const queued = outbox().map((x) => ({ title: x.title, state: 'queued' }));
+    if (queued.length) items = queued.concat(items.filter((x) => !queued.some((q) => q.title === x.title.replace(/^Episode request:\s*/i, ''))));
     if (justSent && Date.now() - justSent.at < 300000 && !items.some((x) => x.title.replace(/^Episode request:\s*/i, '') === justSent.title)) items = [{ title: justSent.title, state: 'open' }].concat(items);
     items.forEach((x) => {
       const li = mk('li', ''), t = mk('span', 'rq-t', x.title.replace(/^Episode request:\s*/i, ''));
@@ -1511,7 +1594,7 @@
         b.type = 'button'; b.setAttribute('aria-label', 'Open ' + found.title);
         b.addEventListener('click', () => { location.hash = '#/e/' + encodeURIComponent(found.id); });
         li.append(t, b);
-      } else li.append(t, mk('span', 'rq-s' + (x.state === 'closed' ? ' done' : ''), x.state === 'closed' ? 'Done' : 'Waiting'));
+      } else li.append(t, mk('span', 'rq-s' + (x.state === 'closed' ? ' done' : ''), x.state === 'closed' ? 'Done' : x.state === 'queued' ? 'Waiting to send' : 'Waiting'));
       ul.append(li);
     });
     $('cr-list-note').textContent = note || '';
@@ -1934,7 +2017,7 @@
   function unlockScreen() { if (wl) { wl.release().catch(() => {}); wl = null; } }
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && playing) lockScreen();
-    if (document.visibilityState === 'visible') { if (updatePending && canReloadNow()) location.reload(); else if (updatePending) showUpdateBar(); else checkForUpdate(); if (needsAudio() || audioStatus.active) scheduleAudioPoll(500); }
+    if (document.visibilityState === 'visible') { flushOutbox(); if (updatePending && canReloadNow()) location.reload(); else if (updatePending) showUpdateBar(); else checkForUpdate(); if (needsAudio() || audioStatus.active) scheduleAudioPoll(500); }
   });
 
   function showToast(msg) {
@@ -2667,6 +2750,11 @@
     $('ver-btn').addEventListener('click', openVersions);
     $('app-reload').addEventListener('click', reloadNow);
     $('update-now').addEventListener('click', reloadNow);
+    $('share-app').addEventListener('click', async () => {
+      const url = location.href.split('#')[0];
+      try { if (navigator.share) { await navigator.share({ title: 'Travel Podcasts', text: 'Our travel podcasts app:', url }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
+      try { await navigator.clipboard.writeText(url); showToast('Link copied. Paste it into a message.'); } catch (e) { window.prompt('Copy this link:', url); }
+    });
     $('map-gps').addEventListener('click', toggleWalkGps);
     $('map-expand').addEventListener('click', () => openWalkMap());
     $('script-btn').addEventListener('click', () => setScriptShown(!scriptShown, true));
@@ -2823,7 +2911,10 @@
     await loadLibrary();
     updateQueueUi();
     window.addEventListener('hashchange', route);
+    window.addEventListener('online', syncOnline); window.addEventListener('offline', syncOnline);
+    setInterval(() => { if (outbox().length) flushOutbox(); }, 60000);
     route();
+    syncOnline();
     checkForUpdate();
     startAudioWatch();
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* optional */ }

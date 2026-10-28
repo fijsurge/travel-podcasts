@@ -513,7 +513,7 @@ dialog.map-full[open] { display: flex; flex-direction: column; }
 #rp-note { width: 100%; font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: inherit; resize: vertical; }
 
 /* trip packs */
-.pack { display: flex; align-items: center; gap: 12px; justify-content: space-between; padding: 10px 0; border-top: 1px solid var(--line); }
+.pack { padding: 10px 0; border-top: 1px solid var(--line); }
 .pack-t { display: grid; min-width: 0; }
 .pack-n { font: 400 1.05rem var(--serif); }
 .pack small { color: var(--muted, inherit); opacity: .8; }
@@ -538,3 +538,15 @@ dialog.map-full[open] { display: flex; flex-direction: column; }
 .welcome h2 { margin: 0 0 8px; font: 400 1.35rem var(--serif); }
 .welcome ul { margin: 0 0 14px; padding-left: 18px; display: grid; gap: 8px; }
 .welcome .btn-sm { min-height: 44px; }
+
+/* offline banner, pack checklist */
+.offline-bar { position: sticky; top: 0; z-index: 12; padding: 8px 16px; background: var(--signal); color: #08141b; font-size: .9rem; font-weight: 600; }
+.pack { display: block; }
+.pack-top { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
+.pack-check { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 8px; font-size: .88rem; }
+.pc { display: inline-flex; align-items: center; gap: 4px; }
+.pc-i { font-weight: 700; }
+.pc.ok .pc-i { color: var(--accent); }
+.pc.todo .pc-i { color: var(--muted); }
+.pc-fix { margin-left: 4px; min-height: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--accent); background: transparent; color: var(--ink); font: inherit; font-size: .85rem; font-weight: 600; }
+.pc-fix:disabled { opacity: .45; }
