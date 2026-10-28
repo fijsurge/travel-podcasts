@@ -1071,6 +1071,57 @@
     sec.append(off);
   }
 
+
+  /* ---------- trip packs: everything for one place, saved to the phone in one tap ---------- */
+  const packBusy = new Map(); // place -> progress text while saving
+  function epBytes(e) {
+    const m = audioManifest && audioManifest.episodes && audioManifest.episodes[e.id];
+    return m ? Object.values(m.chapters || {}).reduce((n, c) => n + (c.bytes || 0), 0) : 0;
+  }
+  function tripPacks(list) {
+    const by = new Map();
+    list.filter((x) => x.place && offlineUrls(x).length).forEach((x) => { if (!by.has(x.place)) by.set(x.place, []); by.get(x.place).push(x); });
+    return [...by].map(([place, eps]) => {
+      const todo = eps.filter((x) => !savedOffline(x));
+      return { place, eps, todo, mb: todo.reduce((n, x) => n + epBytes(x), 0) / 1048576 };
+    }).sort((a, b) => (b.todo.length > 0) - (a.todo.length > 0) || a.place.localeCompare(b.place));
+  }
+  async function savePack(p) {
+    if (packBusy.has(p.place)) return;
+    try {
+      if (navigator.storage && navigator.storage.estimate) {
+        const s = await navigator.storage.estimate();
+        if (s.quota && s.quota - s.usage < p.mb * 1048576 * 1.3 + 30e6 && !confirm('This phone is getting short of space (about ' + Math.round((s.quota - s.usage) / 1048576) + ' MB free). Save anyway?')) return;
+      }
+      await warmShell();
+      for (let i = 0; i < p.todo.length; i++) {
+        const e = p.todo[i];
+        packBusy.set(p.place, `Saving ${i + 1} of ${p.todo.length}\u2026`); renderLibrary();
+        await downloadEpisode(e);
+        if (stopsOf(e).length) { try { await saveWalkMap(e); } catch (err) { /* audio is saved; the map can be saved from the walk screen */ } }
+        await refreshOffline();
+      }
+      showToast(p.place + ' is saved. It will play with no signal.');
+    } catch (err) { showToast('Saving stopped. Check your connection and tap again; nothing is lost.'); }
+    packBusy.delete(p.place); await refreshOffline(); renderLibrary();
+  }
+  function renderPacks(box, list) {
+    const packs = tripPacks(list); if (!packs.length) return;
+    const sec = mk('section', 'shelf packs', '');
+    sec.append(mk('h2', '', 'Get ready for a trip'), mk('p', 'sub', 'Saves every episode and the walking maps for a place, so they work with no signal.'));
+    packs.slice(0, placeFilter ? 1 : 4).forEach((p) => {
+      if (placeFilter && p.place !== placeFilter) return;
+      const row = mk('div', 'pack', ''), t = mk('span', 'pack-t', '');
+      const busy = packBusy.get(p.place);
+      t.append(mk('span', 'pack-n', p.place), mk('small', '', `${p.eps.length} episode${p.eps.length > 1 ? 's' : ''} \u00b7 ` + (p.todo.length ? `about ${Math.max(1, Math.round(p.mb))} MB to save` : 'all saved on this phone')));
+      const b = mk('button', p.todo.length ? 'btn-sm' : 'btn-sm ghost', busy || (p.todo.length ? 'Save for the trip' : 'Saved'));
+      b.type = 'button'; b.disabled = !!busy || !p.todo.length;
+      b.addEventListener('click', () => savePack(p));
+      row.append(t, b); sec.append(row);
+    });
+    if (sec.children.length > 2) box.append(sec);
+  }
+
   function renderHome() {
     const visible = library.filter((x) => !hidden.includes(x.id));
     renderPlaceChips($('home-places'), [...new Set(visible.map((x) => x.place).filter(Boolean))]);
@@ -1084,6 +1135,7 @@
       return;
     }
     renderNear(box);
+    renderPacks(box, visible);
     const shelf = (title, sub) => { const s = mk('section', 'shelf', ''); s.append(mk('h2', '', title)); if (sub) s.append(mk('p', 'sub', sub)); box.append(s); return s; };
     const cont = shown.filter((x) => { const p = percent(x); return p > 0 && p < 100; })
       .sort((a, b) => ((progress[b.id] || {}).t || 0) - ((progress[a.id] || {}).t || 0)).slice(0, 3);

@@ -512,3 +512,10 @@ dialog.map-full[open] { display: flex; flex-direction: column; }
 .rp-kinds label { display: flex; gap: 10px; align-items: center; min-height: 44px; }
 .rp-kinds input { width: 20px; height: 20px; flex: none; }
 #rp-note { width: 100%; font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: inherit; resize: vertical; }
+
+/* trip packs */
+.pack { display: flex; align-items: center; gap: 12px; justify-content: space-between; padding: 10px 0; border-top: 1px solid var(--line); }
+.pack-t { display: grid; min-width: 0; }
+.pack-n { font: 400 1.05rem var(--serif); }
+.pack small { color: var(--muted, inherit); opacity: .8; }
+.pack .btn-sm { flex: none; min-height: 44px; }
