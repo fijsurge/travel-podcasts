@@ -1,6 +1,7 @@
 /* Offline support: files are fetched fresh when online and served from cache when offline. */
-const CACHE = 'travel-podcasts-v6';
+const CACHE = 'travel-podcasts-v7';
 const TILE_CACHE = 'tp-tiles-v1'; // map tiles you have looked at, so the walking map still draws offline
+const MAP_CACHE = 'tp-maps-v1'; // whole-route map tiles saved from the walk screen; never trimmed here
 const AUDIO_CACHE = 'tp-audio-v1'; // filled by the page ("Save for offline"); never deleted here
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'library.json',
   'vendor/leaflet.js', 'vendor/leaflet.css',
@@ -12,7 +13,7 @@ self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', (e) => {
-  e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE && k !== AUDIO_CACHE && k !== TILE_CACHE).map((k) => caches.delete(k))))
+  e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE && k !== AUDIO_CACHE && k !== TILE_CACHE && k !== MAP_CACHE).map((k) => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
 // Saved audio is served from its cache, with Range support so seeking works offline.
@@ -42,6 +43,8 @@ async function audioResponse(req) {
 
 // OpenStreetMap tiles: show the cached tile at once, refresh it in the background, keep the newest 500.
 async function tileResponse(req) {
+  const saved = await (await caches.open(MAP_CACHE)).match(req.url);
+  if (saved) return saved;
   const cache = await caches.open(TILE_CACHE);
   const hit = await cache.match(req);
   const net = fetch(req).then((r) => {
@@ -53,7 +56,10 @@ async function tileResponse(req) {
 
 self.addEventListener('fetch', (e) => {
   const req = e.request;
-  if (req.method === 'GET' && new URL(req.url).hostname === 'tile.openstreetmap.org') { e.respondWith(tileResponse(req)); return; }
+  if (req.method === 'GET' && new URL(req.url).hostname === 'tile.openstreetmap.org') {
+    if (req.mode === 'cors') return; // the page saving the route (it files these itself)
+    e.respondWith(tileResponse(req)); return;
+  }
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
   const path = new URL(req.url).pathname;
   if (/\/audio\/[^/]+\/\d+\.(mp3|json)$/.test(path)) { e.respondWith(audioResponse(req)); return; }

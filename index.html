@@ -150,6 +150,13 @@
     <div class="ch-meta" id="ch-meta"></div>
     <div class="walk-slot" id="walk-slot-inline">
       <div class="walk-view inline" id="walk-view" hidden>
+        <div class="mf-arrive" id="walk-arrive" role="status" hidden>
+          <div class="mf-arrive-text" id="arrive-text"></div>
+          <div class="mf-arrive-acts">
+            <button class="btn-sm" id="arrive-go" type="button"></button>
+            <button class="btn-sm ghost" id="arrive-x" type="button">Not now</button>
+          </div>
+        </div>
         <div class="mf-mapwrap">
           <div id="walk-map" class="walk-map" role="application" aria-label="Map of the walking tour"></div>
           <div class="mf-fabs">
@@ -163,11 +170,13 @@
           <p class="mf-leg" id="mf-leg"></p>
           <p class="mf-how" id="mf-how"></p>
           <p class="mf-gps" id="map-gps-note"></p>
+          <label class="mf-wait"><input type="checkbox" id="walk-wait"> Pause at each stop until I arrive</label>
           <div class="mf-acts">
             <a class="btn-sm" id="mf-dir" target="_blank" rel="noopener">Directions</a>
             <button class="btn-sm ghost" id="mf-play" type="button">Play this stop</button>
           </div>
           <a class="btn-sm ghost wide-link" id="map-whole" target="_blank" rel="noopener">Open the whole walk in Google Maps</a>
+          <button class="btn-sm ghost wide-link" id="map-save" type="button">Save map for offline</button>
           <p class="fine mf-fine">The dashed line is straight, not the street route. Stop positions are accurate to about 50 meters.</p>
         </section>
       </div>
@@ -334,6 +343,7 @@
     <label class="field check"><input type="checkbox" id="wake"> Keep the screen on while playing</label>
     <label class="field check"><input type="checkbox" id="autonext"> Continue into the next chapter</label>
     <label class="field check"><input type="checkbox" id="follow"> Scroll the script along with the audio</label>
+    <label class="field check"><input type="checkbox" id="waitstop"> Walking tours: pause at each stop until I arrive</label>
     <div id="phone-box" hidden>
       <h3 class="sec">Phone voice</h3>
       <p class="fine" id="voice-hint">Only used when you choose it above. It stops when you leave the app, and its voices can differ from part to part. Better voices are usually under your phone's text-to-speech settings (for example "Google" or "Enhanced" voices) and appear here once installed.</p>

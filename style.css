@@ -480,3 +480,21 @@ dialog.map-full[open] { display: flex; flex-direction: column; }
 .req-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
 .rq-s { flex: none; font-size: .85rem; font-weight: 650; color: var(--ink-soft, var(--ink)); }
 .rq-s.done { color: var(--accent); }
+
+.mf-arrive { display: grid; gap: 8px; padding: 10px 12px; background: var(--accent); color: var(--accent-ink); border-radius: 12px; margin: 0 0 8px; }
+.mf-arrive[hidden] { display: none; }
+.walk-view.inline .mf-arrive { margin: 8px 8px 0; }
+.walk-view.full .mf-arrive { margin: 8px 12px 0; }
+.mf-arrive-text { font-weight: 650; line-height: 1.3; }
+.mf-arrive-acts { display: flex; gap: 8px; }
+.mf-arrive .btn-sm { flex: 1; min-height: 46px; background: var(--accent-ink); color: var(--accent); border-color: var(--accent-ink); }
+.mf-arrive .btn-sm.ghost { background: transparent; color: var(--accent-ink); border-color: currentColor; }
+.mf-arrive .btn-sm[hidden] { display: none; }
+.mf-wait { display: flex; align-items: center; gap: 10px; min-height: 40px; font-size: .92rem; }
+.mf-wait input { width: 22px; height: 22px; accent-color: var(--accent); }
+.walk-view.inline #map-save { display: none; }
+
+.walk-view.inline .mf-wait { min-height: 34px; font-size: .88rem; }
+.walk-view.inline .mf-gps:empty { display: none; }
+.walk-view.inline.has-arrive .mf-how { display: none; }
+.walk-view.inline.has-arrive .mf-mapwrap { height: clamp(96px, 12dvh, 130px); }

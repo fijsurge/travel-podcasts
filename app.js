@@ -23,7 +23,7 @@
   };
 
   const settings = Object.assign(
-    { rate: 1, voiceURI: '', wake: true, autonext: true, follow: false, pron: '', speakerVoices: {}, engine: 'natural' },
+    { rate: 1, voiceURI: '', wake: true, autonext: true, follow: false, waitStop: false, pron: '', speakerVoices: {}, engine: 'natural' },
     store.get('tp.settings', {})
   );
   if (settings.engine === 'auto' && !settings.engineChosen) settings.engine = 'natural'; // 'auto' was only ever the old default
@@ -219,6 +219,7 @@
       await warmShell();
       btn.disabled = true;
       await downloadEpisode(e, (i, total) => { btn.textContent = `Saving ${i} of ${total}\u2026`; });
+      if (stopsOf(e).length) { btn.textContent = 'Saving the map\u2026'; try { await saveWalkMap(e); } catch (err) { /* the audio is saved; the map can be saved from the walk screen */ } }
       showToast('Saved for offline listening.');
     } catch (err) {
       showToast('Saving stopped. Check your connection and try again.');
@@ -554,10 +555,11 @@
     $('script-btn').hidden = !w;
     $('view-player').classList.toggle('walk-on', !!w);
     if (!w) {
-      wv.hidden = true; $('reader').hidden = false; stopWalkGps(); syncFollowUi();
+      wv.hidden = true; $('reader').hidden = false; stopWalkGps(); syncFollowUi(); waitFor = null; arrivePrompt = null; syncArrive();
       if (walkMap) { walkMap.remove(); walkMap = null; walkPins = []; walkYou = null; }
       walkEpId = ''; return;
     }
+    $('walk-wait').checked = !!settings.waitStop; syncMapSave();
     if (walkEpId !== ep.id) {
       walkEpId = ep.id; manualSelAt = 0;
       wv.hidden = false;
@@ -573,6 +575,7 @@
       if (Date.now() - manualSelAt > 60000) selectStop(w.next != null ? w.next : Math.max(0, w.cur), !!walkMap);
     }
     if (walkPref.gps() && walkWatch == null && view === 'player') startWalkGps(true);
+    syncArrive();
   }
 
   function closeWalkMap() { const d = $('dlg-map'); if (d.open) d.close(); }
@@ -604,12 +607,14 @@
     if (!navigator.geolocation) { if (!quiet) $('map-gps-note').textContent = 'This browser cannot share a location.'; return; }
     setGpsButton(true); if (!quiet) $('map-gps-note').textContent = 'Finding you…';
     walkWatch = navigator.geolocation.watchPosition((pos) => {
-      const first = !walkGps; showYou(pos);
+      const first = !walkGps; showYou(pos); checkArrival(pos);
       if (first && walkMap && window.L && walkPins[walkSel]) walkMap.fitBounds(window.L.latLngBounds([[pos.coords.latitude, pos.coords.longitude], walkPins[walkSel].getLatLng()]), { paddingTopLeft: [50, 64], paddingBottomRight: [50, 44], maxZoom: 17 });
     }, (err) => {
-      stopWalkGps(); walkPref.setGps(false);
-      $('map-gps-note').textContent = err.code === 1 ? 'Location is blocked. Allow it for this site in your browser settings.' : 'Could not find you yet. Try again outdoors.';
-    }, { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 });
+      if (err.code === 1) { // blocked: stop for good. A lost signal (no fix for a moment) is normal on a walk, so the watch carries on.
+        stopWalkGps(); walkPref.setGps(false);
+        $('map-gps-note').textContent = 'Location is blocked. Allow it for this site in your browser settings.';
+      } else $('map-gps-note').textContent = 'Looking for your location\u2026';
+    }, { enableHighAccuracy: true, maximumAge: 10000, timeout: 60000 });
   }
   function toggleWalkGps() {
     if (walkWatch != null) { stopWalkGps(); walkPref.setGps(false); $('map-gps-note').textContent = ''; return; }
@@ -619,6 +624,124 @@
     if (walkWatch != null && navigator.geolocation) navigator.geolocation.clearWatch(walkWatch);
     walkWatch = null; walkGps = null; setGpsButton(false);
     if (walkYou) { walkYou.dot.remove(); walkYou.ring.remove(); walkYou = null; }
+  }
+
+  /* ---------- walk mode: arrival prompt, pausing at each stop, saving the map ---------- */
+  // waitFor: the stop whose audio is loaded and paused until you get there. arrivePrompt: a stop you have just reached.
+  let waitFor = null, arrivePrompt = null, arrivedHits = 0;
+  const arrivedSeen = new Set();
+  const holdBefore = (n) => (settings.waitStop && ep ? stopsOf(ep).findIndex((s) => s.ch === n) : -1);
+  function buzz(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) { /* optional */ } }
+  function chime() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+      const c = new AC();
+      [660, 880].forEach((f, i) => {
+        const o = c.createOscillator(), g = c.createGain(), t = c.currentTime + i * 0.18;
+        o.frequency.value = f; o.connect(g); g.connect(c.destination);
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+        o.start(t); o.stop(t + 0.18);
+      });
+      setTimeout(() => { try { c.close(); } catch (e) { /* optional */ } }, 800);
+    } catch (e) { /* optional */ }
+  }
+  function waitingStop() {
+    if (waitFor == null || playing) return null;
+    const w = walkState();
+    if (!w || w.cur !== waitFor) { waitFor = null; return null; }
+    return waitFor;
+  }
+  function beginWait(k) { waitFor = k; arrivedHits = 0; arrivePrompt = null; chime(); buzz([150]); syncArrive(); }
+
+  function syncArrive() {
+    const box = $('walk-arrive'), w = walkState(); if (!box) return;
+    const k = waitingStop();
+    if (arrivePrompt != null && (!w || w.cur >= arrivePrompt)) arrivePrompt = null;
+    $('walk-view').classList.toggle('has-arrive', !!w && (k != null || arrivePrompt != null));
+    if (!w || (k == null && arrivePrompt == null)) { box.hidden = true; return; }
+    const kk = k != null ? k : arrivePrompt, st = w.stops[kk], go = $('arrive-go'), no = $('arrive-x');
+    box.hidden = false;
+    if (k != null) {
+      let where = '';
+      if (walkGps) { const m = metres(walkGps.coords.latitude, walkGps.coords.longitude, st.lat, st.lon); where = m < 45 ? ' You are here.' : ' About ' + fmtDist(m) + ' ' + heading(walkGps.coords.latitude, walkGps.coords.longitude, st.lat, st.lon) + ', ' + walkTime(m) + ' on foot.'; }
+      $('arrive-text').textContent = 'Walk to stop ' + (kk + 1) + ', ' + st.name + '.' + where + (walkWatch != null ? ' It starts when you get there.' : ' Tap start when you arrive, or turn on Show where I am and it starts by itself.');
+      go.textContent = 'Start stop ' + (kk + 1) + ' now'; no.hidden = true;
+    } else {
+      $('arrive-text').textContent = 'You have reached stop ' + (kk + 1) + ', ' + st.name + '.';
+      go.textContent = 'Play stop ' + (kk + 1); no.hidden = false;
+    }
+  }
+  function checkArrival(pos) {
+    const w = walkState(); if (!w) return;
+    const waiting = waitingStop(), k = waiting != null ? waiting : w.next;
+    if (k == null) { syncArrive(); return; }
+    const st = w.stops[k], d = metres(pos.coords.latitude, pos.coords.longitude, st.lat, st.lon);
+    const here = d <= Math.max(40, Math.min(pos.coords.accuracy || 0, 60));
+    arrivedHits = here ? arrivedHits + 1 : 0; // two fixes in a row, so one stray reading does nothing
+    const key = ep.id + ':' + k;
+    if (arrivedHits >= 2 && !arrivedSeen.has(key)) {
+      arrivedSeen.add(key); chime(); buzz([200, 100, 200]);
+      if (waiting != null) { play(); return; }
+      arrivePrompt = k;
+    }
+    syncArrive();
+  }
+  function arriveGo() {
+    const w = walkState(); if (!w) return;
+    const k = waitingStop();
+    if (k != null) { play(); return; }
+    if (arrivePrompt != null) { const st = w.stops[arrivePrompt]; arrivePrompt = null; closeWalkMap(); gotoChapter(st.ch, true); }
+  }
+
+  // Map tiles for the whole route, kept for good in their own cache so the map still draws with no signal.
+  const MAP_CACHE = 'tp-maps-v1';
+  const tileX = (lon, z) => Math.floor(((lon + 180) / 360) * 2 ** z);
+  const tileY = (lat, z) => { const r = (lat * Math.PI) / 180; return Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * 2 ** z); };
+  function routeTiles(stops) {
+    const lats = stops.map((s) => s.lat), lons = stops.map((s) => s.lon);
+    const mid = (Math.min(...lats) + Math.max(...lats)) / 2, cos = Math.cos((mid * Math.PI) / 180);
+    const box = (pad, items) => {
+      const dLat = pad / 111320, dLon = pad / (111320 * cos);
+      const la = items.map((s) => s.lat), lo = items.map((s) => s.lon);
+      return { n: Math.max(...la) + dLat, s: Math.min(...la) - dLat, e: Math.max(...lo) + dLon, w: Math.min(...lo) - dLon };
+    };
+    const out = [];
+    const add = (b, z) => { for (let x = tileX(b.w, z); x <= tileX(b.e, z); x++) for (let y = tileY(b.n, z); y <= tileY(b.s, z); y++) out.push(z + '/' + x + '/' + y); };
+    const whole = box(250, stops);
+    for (let z = 14; z <= 17; z++) add(whole, z);
+    stops.forEach((s) => add(box(120, [s]), 18));
+    return [...new Set(out)].slice(0, 220).map((p) => OSM_TILES.replace('{z}/{x}/{y}', p));
+  }
+  const savedMaps = () => store.get('tp.maps', {});
+  async function saveWalkMap(e, onProgress) {
+    const stops = stopsOf(e); if (!stops.length || !window.caches) return 0;
+    const urls = routeTiles(stops), cache = await caches.open(MAP_CACHE);
+    let done = 0, next = 0, failed = 0;
+    async function one(url) {
+      if (await cache.match(url)) return;
+      try {
+        let r = await fetch(url, { mode: 'cors' }).catch(() => null);
+        if (r && r.ok) { await cache.put(url, r); return; }
+        await fetch(url, { mode: 'no-cors' }); // no CORS headers: the service worker keeps it in the general tile cache instead
+      } catch (err) { failed++; }
+    }
+    async function worker() { while (next < urls.length) { const u = urls[next++]; await one(u); done++; if (onProgress) onProgress(done, urls.length); } }
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    if (failed > urls.length / 2) throw new Error('map download failed');
+    const m = savedMaps(); m[e.id] = { n: urls.length, at: Date.now() }; store.set('tp.maps', m);
+    return urls.length;
+  }
+  function syncMapSave() {
+    const b = $('map-save'); if (!b || !ep) return;
+    const s = savedMaps()[ep.id];
+    b.textContent = s ? 'Map saved for offline \u2713 (save again)' : 'Save map for offline';
+  }
+  async function onSaveMap() {
+    const b = $('map-save'), e = ep; if (!e) return;
+    b.disabled = true;
+    try { const n = await saveWalkMap(e, (i, t) => { b.textContent = 'Saving map ' + i + ' of ' + t + '\u2026'; }); showToast('Map saved. It works without a connection now.'); }
+    catch (err) { showToast('Saving the map stopped. Check your connection and try again.'); }
+    b.disabled = false; syncMapSave();
   }
 
   /* ---------- the script and the audio: following is optional ---------- */
@@ -1696,11 +1819,16 @@
     audioEl.src = src; loadedKey = key; curBlobUrl = blobUrl;
     if (oldBlob) URL.revokeObjectURL(oldBlob);
     audioEl.playbackRate = settings.rate;
-    const p = audioEl.play();
-    if (p && p.catch) p.catch((err) => { if (!err || err.name !== 'AbortError') { playing = false; setPlayingUi(); unlockScreen(); showToast('Tap play to carry on.'); } });
+    const hold = holdBefore(n); // walking tour: wait at the end of a stop until you arrive at the next one
+    if (hold >= 0) { playing = false; setPlayingUi(); unlockScreen(); }
+    else {
+      const p = audioEl.play();
+      if (p && p.catch) p.catch((err) => { if (!err || err.name !== 'AbortError') { playing = false; setPlayingUi(); unlockScreen(); showToast('Tap play to carry on.'); } });
+    }
     loadSeq++; chIdx = n; idx = 0; pendingSeek = null;
     renderChapter({ units: data.units, audio: true });
     mark(0, true); remember(false);
+    if (hold >= 0) beginWait(hold);
     return true;
   }
 
@@ -1977,11 +2105,13 @@
   }
 
   function setPlayingUi() {
+    if (playing) { waitFor = null; arrivePrompt = null; }
     updateMini();
     $('ico-play').toggleAttribute('hidden', playing);
     $('ico-pause').toggleAttribute('hidden', !playing);
     $('play').setAttribute('aria-label', playing ? 'Pause' : 'Play');
     if ('mediaSession' in navigator) { try { navigator.mediaSession.playbackState = playing ? 'playing' : 'paused'; } catch (e) { /* optional */ } }
+    syncArrive();
   }
 
   /* ---------- phone-voice engine (speech synthesis) ---------- */
@@ -2094,6 +2224,11 @@
       setSleep(0); showToast('Sleep timer: stopped at the end of the chapter.');
       if (chIdx + 1 < ep.chapters.length) { await gotoChapter(chIdx + 1, false); return; }
       playing = false; stopAll(); switching = false; setPlayingUi(); unlockScreen(); remember(true); return;
+    }
+    if (settings.autonext && chIdx + 1 < ep.chapters.length && holdBefore(chIdx + 1) >= 0) {
+      const k = holdBefore(chIdx + 1);
+      playing = false; stopAll(); switching = false; setPlayingUi(); unlockScreen();
+      await gotoChapter(chIdx + 1, false); beginWait(k); return;
     }
     if (settings.autonext && chIdx + 1 < ep.chapters.length) { await gotoChapter(chIdx + 1, true); return; }
     const last = chIdx + 1 >= ep.chapters.length;
@@ -2334,6 +2469,16 @@
     });
     let st = null;
     $('search-input').addEventListener('input', (e) => { clearTimeout(st); st = setTimeout(() => runSearch(e.target.value), 120); });
+    $('arrive-go').addEventListener('click', arriveGo);
+    $('arrive-x').addEventListener('click', () => { arrivePrompt = null; syncArrive(); });
+    $('map-save').addEventListener('click', onSaveMap);
+    const setWait = (on) => {
+      settings.waitStop = on; saveSettings(); $('walk-wait').checked = on; $('waitstop').checked = on;
+      if (on && walkWatch == null && walkState() && view === 'player') { walkPref.setGps(true); startWalkGps(false); }
+      syncArrive();
+    };
+    $('walk-wait').addEventListener('change', (e) => setWait(e.target.checked));
+    $('waitstop').addEventListener('change', (e) => setWait(e.target.checked));
     $('cr-kind').addEventListener('change', syncCreateForm);
     $('cr-send').addEventListener('click', sendRequest);
     $('relay-test').addEventListener('click', async () => {
@@ -2382,7 +2527,7 @@
     // settings
     $('settings-btn').addEventListener('click', () => {
       $('engine').value = engine(); syncPhoneBox();
-      $('wake').checked = !!settings.wake; $('autonext').checked = !!settings.autonext; $('follow').checked = !!settings.follow; $('pron').value = settings.pron || '';
+      $('wake').checked = !!settings.wake; $('autonext').checked = !!settings.autonext; $('follow').checked = !!settings.follow; $('waitstop').checked = !!settings.waitStop; $('pron').value = settings.pron || '';
       $('relay-url').value = relay().url; $('relay-code').value = relay().code; $('relay-status').textContent = relayReady() ? 'Saved on this phone.' : '';
       $('gh-token').value = ghToken(); $('gh-status').textContent = ghToken() ? 'Key saved on this phone.' : 'No key saved. Deleting from GitHub is switched off.';
       loadVoices(); renderSpeakerVoices(); $('dlg-settings').showModal();
