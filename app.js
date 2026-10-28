@@ -157,7 +157,12 @@
     library = shipped.concat(userEps.map((e) => Object.assign({ user: true }, e)));
     library.sort((a, b) => (a.order - b.order) || a.title.localeCompare(b.title));
     searchIdx = null;
+    // first run on this phone: everything already here counts as seen, so only later arrivals are marked New
+    if (store.get('tp.seen', null) === null && shipped.length) store.set('tp.seen', shipped.map((x) => x.id));
   }
+  const seenSet = () => new Set(store.get('tp.seen', []) || []);
+  const isNew = (e) => !e.user && !seenSet().has(e.id);
+  function markSeen(id) { const s = seenSet(); if (!s.has(id)) { s.add(id); store.set('tp.seen', [...s]); } }
 
   const epWords = (ep, upToChapter) =>
     ep.chapters.slice(0, upToChapter).reduce((n, c) => n + c.paragraphs.reduce((m, p) => m + p.split(/\s+/).length, 0), 0);
@@ -977,8 +982,9 @@
     const wrap = mk('span', 'cover-wrap', '');
     wrap.append(coverEl(e));
     const badge = audioBadge(e); if (badge) wrap.append(badge);
+    if (isNew(e)) wrap.append(mk('span', 'badge-new', 'New'));
     const fam = family(e);
-    b.append(wrap, mk('span', 't-title', e.title), mk('span', 't-meta', `${e.minutes} min · ${variantOf(e)}${fam.length > 1 ? ' · 2 versions' : ''}${note ? ' · ' + note : ''}`));
+    b.append(wrap, mk('span', 't-title', e.title), mk('span', 't-meta', `${e.minutes} min · ${variantOf(e)}${fam.length > 1 ? ' · 2 versions' : ''}${savedOffline(e) ? ' · saved' : ''}${note ? ' · ' + note : ''}`));
     b.addEventListener('click', () => { location.hash = '#/e/' + encodeURIComponent(e.id); });
     li.append(b);
     return li;
@@ -1172,7 +1178,7 @@
     const pct = percent(e);
     const nowPlaying = !removed && ep && ep.id === e.id;
     const where = [e.place || (e.user ? 'Added by you' : 'Episode'), FORMATS[fmtOf(e)].label, variantOf(e)].join(' · ');
-    body.append(mk('span', 'place', removed ? 'Removed' : where + (nowPlaying ? ' · now ' + (playing ? 'playing' : 'open') : '')));
+    body.append(mk('span', 'place', removed ? 'Removed' : (isNew(e) ? 'NEW \u00b7 ' : '') + where + (nowPlaying ? ' · now ' + (playing ? 'playing' : 'open') : '')));
     body.append(mk('h2', '', e.title));
     if (e.blurb) body.append(mk('p', '', e.blurb));
     const ac = audioCount(e);
@@ -1449,12 +1455,29 @@
     $('rp-send').disabled = false;
   }
   let justSent = null;
+  // "Overview: Antwerp" -> the newest matching episode, so a finished request opens straight to its result
+  function requestEpisode(title) {
+    const m = String(title).replace(/^Episode request:\s*/i, '').match(/^(Overview|Walking tour|Deep dive):\s*(.+)$/i);
+    if (!m) return null;
+    const fmt = Object.keys(FORMATS).find((k) => FORMATS[k].label.toLowerCase() === m[1].toLowerCase());
+    const place = fold(m[2]);
+    const hits = library.filter((e) => !e.user && fmtOf(e) === fmt && fold(e.place || '') === place);
+    if (!hits.length) return null;
+    return hits.sort((x, y) => (isNew(y) - isNew(x)) || (y.order - x.order))[0];
+  }
   function drawRequests(items, note) {
     const ul = $('cr-list'); ul.textContent = '';
     if (justSent && Date.now() - justSent.at < 300000 && !items.some((x) => x.title.replace(/^Episode request:\s*/i, '') === justSent.title)) items = [{ title: justSent.title, state: 'open' }].concat(items);
     items.forEach((x) => {
       const li = mk('li', ''), t = mk('span', 'rq-t', x.title.replace(/^Episode request:\s*/i, ''));
-      li.append(t, mk('span', 'rq-s' + (x.state === 'closed' ? ' done' : ''), x.state === 'closed' ? 'Done' : 'Waiting'));
+      const found = x.state === 'closed' ? requestEpisode(x.title) : null;
+      if (found) {
+        const ac = audioCount(found), total = found.chapters.length;
+        const b = mk('button', 'rq-s done link', ac >= total ? 'Open' : 'Open \u00b7 audio ' + ac + '/' + total);
+        b.type = 'button'; b.setAttribute('aria-label', 'Open ' + found.title);
+        b.addEventListener('click', () => { location.hash = '#/e/' + encodeURIComponent(found.id); });
+        li.append(t, b);
+      } else li.append(t, mk('span', 'rq-s' + (x.state === 'closed' ? ' done' : ''), x.state === 'closed' ? 'Done' : 'Waiting'));
       ul.append(li);
     });
     $('cr-list-note').textContent = note || '';
@@ -1877,7 +1900,7 @@
   function unlockScreen() { if (wl) { wl.release().catch(() => {}); wl = null; } }
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && playing) lockScreen();
-    if (document.visibilityState === 'visible') { if (updatePending && !playing) location.reload(); else checkForUpdate(); if (needsAudio() || audioStatus.active) scheduleAudioPoll(500); }
+    if (document.visibilityState === 'visible') { if (updatePending && canReloadNow()) location.reload(); else if (updatePending) showUpdateBar(); else checkForUpdate(); if (needsAudio() || audioStatus.active) scheduleAudioPoll(500); }
   });
 
   function showToast(msg) {
@@ -2456,6 +2479,7 @@
     opts = opts || {};
     const found = library.find((e) => e.id === id);
     if (!found) { if (!quiet) location.hash = '#/'; return; }
+    markSeen(id);
     if (plId && plById(plId)) curPl = plId;
     else if (!(ep && ep.id === id)) curPl = null;
     if (ep && ep.id === id) { // already loaded: just show it, never restart it
@@ -2515,12 +2539,17 @@
     }
     const v = await appVersion('no-store');
     if (!v || !appStamp || v === appStamp) return;
-    if (!playing) { location.reload(); return; }
-    showToast('A new version is ready. It will load when you pause or reopen the app.');
     appStamp = v; updatePending = true;
+    if (canReloadNow()) { location.reload(); return; }
+    showUpdateBar();
   }
-  async function reloadNow() {
-    const btn = $('app-reload'); btn.disabled = true; btn.textContent = 'Getting it…';
+  // Never reload under someone who is playing, typing a request, or has a sheet open.
+  const canReloadNow = () => !playing && view !== 'create' && !document.querySelector('dialog[open]');
+  function showUpdateBar() {
+    const bar = $('update-bar'); if (bar) bar.hidden = false;
+  }
+  async function reloadNow(ev) {
+    const btn = (ev && ev.currentTarget) || $('app-reload'); btn.disabled = true; btn.textContent = 'Getting it…';
     try {
       const reg = await navigator.serviceWorker.getRegistration(); if (reg) await reg.update();
       await Promise.all(['index.html', 'app.js', 'style.css', 'library.json', 'audio/manifest.json', 'sw.js'].map((u) => fetch(u, { cache: 'reload' }).catch(() => {})));
@@ -2603,6 +2632,7 @@
     $('queue-clear').addEventListener('click', () => { queue = []; saveQueue(); updateQueueUi(); openQueue(); });
     $('ver-btn').addEventListener('click', openVersions);
     $('app-reload').addEventListener('click', reloadNow);
+    $('update-now').addEventListener('click', reloadNow);
     $('map-gps').addEventListener('click', toggleWalkGps);
     $('map-expand').addEventListener('click', () => openWalkMap());
     $('script-btn').addEventListener('click', () => setScriptShown(!scriptShown, true));

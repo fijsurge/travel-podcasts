@@ -519,3 +519,9 @@ dialog.map-full[open] { display: flex; flex-direction: column; }
 .pack-n { font: 400 1.05rem var(--serif); }
 .pack small { color: var(--muted, inherit); opacity: .8; }
 .pack .btn-sm { flex: none; min-height: 44px; }
+
+/* update bar, New tag, finished-request links */
+.update-bar { position: sticky; top: 0; z-index: 12; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 16px; background: var(--ink); color: var(--bg); font-size: .92rem; }
+.update-bar .btn-sm { background: var(--bg); color: var(--ink); border-color: var(--bg); min-height: 40px; }
+.badge-new { position: absolute; right: 8px; top: 8px; padding: 2px 9px; border-radius: 999px; font-size: .75rem; font-weight: 700; background: var(--signal); color: #08141b; }
+.rq-s.link { cursor: pointer; font: inherit; font-size: .85rem; font-weight: 650; min-height: 36px; padding: 0 12px; background: transparent; border: 1px solid var(--accent); border-radius: 999px; }
