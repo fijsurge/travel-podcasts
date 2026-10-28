@@ -31,7 +31,16 @@ A scheduled Claude task reads the open `episode-request` issues, writes each epi
 (`tools/STYLE.md`), pushes it to `main`, and closes the issue with a comment. The audio is then built by the usual workflow.
 The Create tab lists your recent requests and whether they are done.
 
+## Problem reports
+The **Report a problem** button (player and walk screen) sends a note through the same Worker, filed as an issue labelled
+`episode-feedback` (title starts "Problem report:"). The same scheduled task fixes name pronunciations
+(`tools/pronunciations.json`), stop pins (`stops:` in the episode), or script facts, rebuilds only the changed parts,
+and closes the issue with a comment.
+
+**Updating the Worker:** when `relay/worker.js` changes, open the Worker in Cloudflare, **Edit code**, replace everything
+with the new file, and **Deploy**. Secrets stay as they are. The app tells you if the Worker is too old for reports.
+
 ## Safety
 - The key can only create and read issues in this one repository.
-- Requests without the family code are refused. The Worker also refuses other websites and stops at 15 waiting requests.
+- Requests without the family code are refused. The Worker also refuses other websites and stops at 15 waiting requests (and 15 waiting reports).
 - To shut it off, delete the Worker in Cloudflare or revoke the GitHub token.

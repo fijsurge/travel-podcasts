@@ -1140,6 +1140,24 @@
     if (sec.children.length > 2) box.append(sec);
   }
 
+  /* ---------- first-run welcome: three things worth knowing, shown once ---------- */
+  function renderWelcome(box) {
+    if (store.get('tp.welcomed', false)) return;
+    const installed = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+    const sec = mk('section', 'welcome', '');
+    sec.append(mk('h2', '', 'Welcome'));
+    const ul = mk('ul', '', '');
+    const li = (head, text) => { const l = mk('li', ''); l.append(mk('strong', '', head + ' '), document.createTextNode(text)); ul.append(l); };
+    if (!installed) li('Put it on your home screen.', 'In Chrome, open the menu and choose Add to Home screen. It then opens like any other app.');
+    li('Ask for what you need.', 'The Create tab sends a request for an overview, a walking tour or a deep dive. It is written and voiced within a few hours.');
+    li('Save before you leave Wi-Fi.', 'Under Get ready for a trip, tap Save for the trip. Everything for that place then plays with no signal, maps included.');
+    sec.append(ul);
+    const ok = mk('button', 'btn-sm', 'Got it'); ok.type = 'button';
+    ok.addEventListener('click', () => { store.set('tp.welcomed', true); renderLibrary(); });
+    sec.append(ok);
+    box.append(sec);
+  }
+
   function renderHome() {
     const visible = library.filter((x) => !hidden.includes(x.id));
     renderPlaceChips($('home-places'), [...new Set(visible.map((x) => x.place).filter(Boolean))]);
@@ -1152,6 +1170,7 @@
       box.append(em);
       return;
     }
+    renderWelcome(box);
     renderNear(box);
     renderPacks(box, visible);
     const shelf = (title, sub) => { const s = mk('section', 'shelf', ''); s.append(mk('h2', '', title)); if (sub) s.append(mk('p', 'sub', sub)); box.append(s); return s; };

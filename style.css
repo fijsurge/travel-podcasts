@@ -532,3 +532,9 @@ dialog.map-full[open] { display: flex; flex-direction: column; }
 .mf-more { margin-top: 8px; border-top: 1px solid var(--line); }
 .mf-more summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--muted); font-size: .92rem; font-weight: 600; }
 .mf-more[open] summary { margin-bottom: 2px; }
+
+/* welcome */
+.welcome { margin: 4px 0 18px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.welcome h2 { margin: 0 0 8px; font: 400 1.35rem var(--serif); }
+.welcome ul { margin: 0 0 14px; padding-left: 18px; display: grid; gap: 8px; }
+.welcome .btn-sm { min-height: 44px; }
