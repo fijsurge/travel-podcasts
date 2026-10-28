@@ -4,13 +4,17 @@
 Commands
   plan [--out FILE]             list chapters whose audio is missing or out of date, as a GitHub matrix
   chapter EPISODE N             synthesize one chapter -> audio/EPISODE/NN.mp3 and NN.json (sentence timings)
+  refs                          make the reference voice clips (refs/anna.wav, refs/ben.wav) that Chatterbox clones
   finalize                      write audio/manifest.json from the files present, drop stale ones
 
 Environment
   KOKORO_MODEL   path to kokoro-v1.0*.onnx   (default models/kokoro-v1.0.int8.onnx)
   KOKORO_VOICES  path to voices-v1.0.bin     (default models/voices-v1.0.bin)
   ONLY_EPISODE   limit `plan` to one episode id
-Needs: pip install kokoro-onnx soundfile numpy, and ffmpeg on the PATH.
+Engines (front matter `engine:`)
+  kokoro      default. Needs: pip install kokoro-onnx soundfile numpy, and ffmpeg on the PATH.
+  chatterbox  more expressive two-host dialogue. Needs: pip install chatterbox-tts soundfile (Python 3.11), ffmpeg,
+              and refs/<speaker>.wav (run `refs` once). Speakers are cloned from those clips.
 """
 import argparse
 import json
@@ -110,7 +114,17 @@ def decade_words(n):
 HUNDREDS = re.compile(r"(?<![\d.$€£])\b([1-9])00s\b")
 
 
-def prepare(text, pron):
+# Delivery tags such as [laugh] are performed by Chatterbox and silently dropped by Kokoro.
+TAG = re.compile(r"\s*\[(?:laugh|chuckle|sigh|cough|gasp|groan|sniff|shush|clear throat)\]\s*", re.I)
+
+
+def strip_tags(text):
+    return re.sub(r"\s{2,}", " ", TAG.sub(" ", text)).strip()
+
+
+def prepare(text, pron, keep_tags=False):
+    if not keep_tags:
+        text = strip_tags(text)
     text = HUNDREDS.sub(lambda m: ONES[int(m.group(1))] + " hundreds", text)
     text = YEAR_RANGE.sub(lambda m: m.group(1) + " to " + m.group(2), text)
     text = DECADE.sub(lambda m: decade_words(int(m.group(1))), text)
@@ -195,7 +209,7 @@ def cmd_plan(args):
                 except ValueError:
                     pass
             if os.environ.get("FORCE") == "1" or current != ch["hash"] or not jp.with_suffix(".mp3").exists():
-                todo.append({"episode": ep["id"], "chapter": n})
+                todo.append({"episode": ep["id"], "chapter": n, "engine": ep["engine"]})
     matrix = json.dumps({"include": todo}, separators=(",", ":"))
     print(matrix)
     out = args.out or os.environ.get("GITHUB_OUTPUT")
@@ -204,35 +218,89 @@ def cmd_plan(args):
             f.write(f"matrix={matrix}\ncount={len(todo)}\n")
 
 
+# ---------- engines: each returns (float32 samples, sample rate) for one sentence ----------
+def kokoro_engine(ep):
+    from kokoro_onnx import Kokoro
+    kokoro = Kokoro(
+        os.environ.get("KOKORO_MODEL", str(ROOT / "models" / "kokoro-v1.0.int8.onnx")),
+        os.environ.get("KOKORO_VOICES", str(ROOT / "models" / "voices-v1.0.bin")),
+    )
+
+    def say(text, speaker):
+        voice = ep["voices"].get(speaker or "narrator") or ep["voices"]["narrator"]
+        samples, sr = kokoro.create(prepare(text, PRON), voice=voice, speed=1.0, lang=lang_of(voice))
+        return samples.astype("float32"), sr
+
+    return say
+
+
+def ref_path(speaker):
+    return ROOT / "refs" / ((speaker or "narrator").lower() + ".wav")
+
+
+def tidy(samples, sr, text):
+    """Chatterbox can leave silence around a sentence, and very short lines sometimes trail off into noise.
+    Trim the silence and cap the length to what the words could plausibly take, so pacing stays ours."""
+    import numpy as np
+    a = np.abs(samples)
+    loud = np.where(a > max(0.012, float(a.max()) * 0.02))[0]
+    if len(loud):
+        pad = int(sr * 0.04)
+        samples = samples[max(0, loud[0] - pad): loud[-1] + pad]
+    cap = int(sr * max(1.6, 0.8 + 0.62 * len(text.split())))
+    if len(samples) > cap:
+        samples = samples[:cap].copy()
+        fade = int(sr * 0.12)
+        samples[-fade:] *= np.linspace(1.0, 0.0, fade, dtype=samples.dtype)
+    return samples
+
+
+def chatterbox_engine(ep):
+    import torch
+    from chatterbox.tts_turbo import ChatterboxTurboTTS
+    torch.manual_seed(1234)
+    model = ChatterboxTurboTTS.from_pretrained(device="cpu")
+    print(f"chatterbox loaded, sample rate {model.sr}", flush=True)
+
+    def say(text, speaker):
+        ref = ref_path(speaker)
+        if not ref.exists():
+            sys.exit(f"missing reference voice {ref.relative_to(ROOT)} (run: make_audio.py refs)")
+        wav = model.generate(prepare(text, PRON, keep_tags=True), audio_prompt_path=str(ref))
+        samples = wav.squeeze().detach().cpu().numpy().astype("float32")
+        return tidy(samples, model.sr, strip_tags(text)), model.sr
+
+    return say
+
+
+ENGINE_FACTORIES = {"kokoro": kokoro_engine, "chatterbox": chatterbox_engine}
+PRON = {}
+
+
 def cmd_chapter(args):
     import numpy as np
     import soundfile as sf
-    from kokoro_onnx import Kokoro
 
     ep = next((e for e in episodes() if e["id"] == args.episode), None)
     if ep is None:
         sys.exit(f"unknown episode {args.episode}")
     ch = ep["chapters"][args.chapter]
     units = chapter_units(ch, ep["speakers"])
-    pron = load_pronunciations()
-    kokoro = Kokoro(
-        os.environ.get("KOKORO_MODEL", str(ROOT / "models" / "kokoro-v1.0.int8.onnx")),
-        os.environ.get("KOKORO_VOICES", str(ROOT / "models" / "voices-v1.0.bin")),
-    )
+    PRON.update(load_pronunciations())
+    say = ENGINE_FACTORIES[ep["engine"]](ep)
     pieces, timings, t, sr = [], [], 0.0, 24000
     prev_p = None
     words = para_words(ch, ep["speakers"])
     for i, u in enumerate(units):
-        voice = ep["voices"].get(u["speaker"] or "narrator") or ep["voices"]["narrator"]
-        samples, sr = kokoro.create(prepare(u["text"], pron), voice=voice, speed=1.0, lang=lang_of(voice))
+        samples, sr = say(u["text"], u["speaker"])
         gap = 0.0
         if i:
             gap = turn_gap(ep["speakers"], units[i - 1], u, words) if u["p"] != prev_p else SENTENCE_GAP
             pieces.append(np.zeros(int(sr * gap), dtype=np.float32))
             t += gap
         dur = len(samples) / sr
-        timings.append({"p": u["p"], "speaker": u["speaker"], "text": u["text"], "t": round(t, 2)})
-        pieces.append(samples.astype(np.float32))
+        timings.append({"p": u["p"], "speaker": u["speaker"], "text": strip_tags(u["text"]), "t": round(t, 2)})
+        pieces.append(samples)
         t += dur
         prev_p = u["p"]
         if i % 10 == 0:
@@ -251,6 +319,27 @@ def cmd_chapter(args):
     meta = {"hash": ch["hash"], "label": ch["label"], "duration": round(t, 2), "units": timings}
     json_path(ep["id"], args.chapter).write_text(json.dumps(meta, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"wrote {mp3} ({mp3.stat().st_size // 1024} KB, {t / 60:.1f} min)")
+
+
+REF_TEXT = ("The river is called the Senne, and you have to imagine it nothing like a proper river. It is a small, slow "
+            "stream that used to wander across a wide, wet valley, splitting into channels and making little islands "
+            "as it went. Not exactly a glamorous start.")
+REF_VOICES = {"anna": "af_heart", "ben": "bm_george"}
+
+
+def cmd_refs(_args):
+    """Kokoro reads one short passage in each host voice; Chatterbox then clones those clips."""
+    import soundfile as sf
+    from kokoro_onnx import Kokoro
+    kokoro = Kokoro(
+        os.environ.get("KOKORO_MODEL", str(ROOT / "models" / "kokoro-v1.0.int8.onnx")),
+        os.environ.get("KOKORO_VOICES", str(ROOT / "models" / "voices-v1.0.bin")),
+    )
+    (ROOT / "refs").mkdir(exist_ok=True)
+    for who, voice in REF_VOICES.items():
+        samples, sr = kokoro.create(REF_TEXT, voice=voice, speed=1.0, lang=lang_of(voice))
+        sf.write(str(ROOT / "refs" / f"{who}.wav"), samples, sr)
+        print(f"refs/{who}.wav  {len(samples) / sr:.1f}s")
 
 
 def cmd_finalize(_args):
@@ -286,6 +375,7 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("plan"); p.add_argument("--out"); p.set_defaults(fn=cmd_plan)
     p = sub.add_parser("chapter"); p.add_argument("episode"); p.add_argument("chapter", type=int); p.set_defaults(fn=cmd_chapter)
+    p = sub.add_parser("refs"); p.set_defaults(fn=cmd_refs)
     p = sub.add_parser("finalize"); p.set_defaults(fn=cmd_finalize)
     args = ap.parse_args()
     args.fn(args)

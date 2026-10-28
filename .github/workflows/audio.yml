@@ -1,4 +1,5 @@
-# Turns episodes/*.md into natural-sounding MP3 audio with the free, open-source Kokoro model.
+# Turns episodes/*.md into natural-sounding MP3 audio with free, open-source voice models:
+# Kokoro (default) and Chatterbox Turbo (episodes with `engine: chatterbox`, for expressive two-host dialogue).
 # Runs on GitHub's free runners (this repo is public). Only chapters whose text or voices changed are redone.
 name: Generate audio
 
@@ -10,6 +11,7 @@ on:
       - 'tools/make_audio.py'
       - 'tools/build.py'
       - 'tools/pronunciations.json'
+      - 'refs/**'
   workflow_dispatch:
     inputs:
       force:
@@ -65,14 +67,15 @@ jobs:
           ref: ${{ needs.plan.outputs.sha }}  # the exact commit the plan was made from
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: ${{ matrix.engine == 'chatterbox' && '3.11' || '3.12' }}
       - uses: actions/cache@v4
         id: model
+        if: ${{ matrix.engine != 'chatterbox' }}
         with:
           path: models
           key: kokoro-v1.0-int8
       - name: Download voice model (first run only)
-        if: steps.model.outputs.cache-hit != 'true'
+        if: ${{ matrix.engine != 'chatterbox' && steps.model.outputs.cache-hit != 'true' }}
         run: |
           mkdir -p models
           curl -fL --retry 4 -o models/kokoro-v1.0.int8.onnx "$MODEL_URL/kokoro-v1.0.int8.onnx"
@@ -84,7 +87,17 @@ jobs:
             sudo apt-get install -y -qq ffmpeg
           fi
           ffmpeg -version | head -1
-      - run: pip install kokoro-onnx==0.6.1 soundfile numpy
+      - name: Install Kokoro
+        if: ${{ matrix.engine != 'chatterbox' }}
+        run: pip install kokoro-onnx==0.6.1 soundfile numpy
+      - uses: actions/cache@v4
+        if: ${{ matrix.engine == 'chatterbox' }}
+        with:
+          path: ~/.cache/huggingface
+          key: chatterbox-turbo-hf-v1
+      - name: Install Chatterbox
+        if: ${{ matrix.engine == 'chatterbox' }}
+        run: pip install chatterbox-tts soundfile numpy
       - name: Synthesize chapter
         run: |
           python tools/make_audio.py chapter "${{ matrix.episode }}" "${{ matrix.chapter }}" 2> >(tee err.log >&2) || {

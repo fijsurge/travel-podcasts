@@ -10,6 +10,7 @@ Episode format (see README.md):
   format: overview (10 to 15 min briefing), walk (stop-by-stop walking tour) or deep (long deep dive). Default deep.
   series: optional name that groups variants of the same topic.
   speakers: Anna, Ben                 (optional, for two-voice dialogue episodes)
+  engine: chatterbox                  (optional voice engine: kokoro (default) or chatterbox)
   ---
   ## Notes before you listen ...      (skipped when listening)
   ## Welcome                          (played)
@@ -28,6 +29,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 WPM = 150  # words per minute at 1.0x, used only for the duration estimate
 GEN_VERSION = "1"  # bump to force every chapter's audio to be regenerated
+ENGINES = ("kokoro", "chatterbox")  # front matter: engine: chatterbox (default kokoro)
 DEFAULT_NARRATOR_VOICE = "bf_emma"
 DEFAULT_VOICES = ["af_heart", "bm_george", "af_sarah", "am_michael"]  # used for speakers in order
 
@@ -93,9 +95,11 @@ def speech_fixups(paragraphs):
     return found
 
 
-def chapter_hash(paragraphs, speakers, voices):
+def chapter_hash(paragraphs, speakers, voices, engine="kokoro"):
     """Identifies the exact text and voices a chapter's audio was made from."""
     parts = [paragraphs, speakers, voices, GEN_VERSION]
+    if engine != "kokoro":  # only for other engines, so existing Kokoro chapters keep their hash
+        parts.append(["engine", engine])
     fx = speech_fixups(paragraphs)
     if fx:  # only when a rule applies, so untouched chapters keep their existing hash
         parts.append(fx)
@@ -158,8 +162,11 @@ def parse_episode(raw: str, slug: str):
     words = sum(len(p.split()) for c in chapters for p in c["paragraphs"])
     speakers = detect_speakers(meta, chapters)
     voices = parse_voices(meta, speakers)
+    engine = (meta.get("engine") or "kokoro").strip().lower()
+    if engine not in ENGINES:
+        raise SystemExit(f"{slug}: unknown engine '{engine}' (use one of {', '.join(ENGINES)})")
     for c in chapters:
-        c["hash"] = chapter_hash(c["paragraphs"], speakers, voices)
+        c["hash"] = chapter_hash(c["paragraphs"], speakers, voices, engine)
     title = meta.get("title") or slug.replace("-", " ").title()
     return {
         "id": slug,
@@ -179,6 +186,7 @@ def parse_episode(raw: str, slug: str):
         "sources": sources,
         "speakers": speakers,
         "voices": voices,
+        "engine": engine,
     }
 
 
