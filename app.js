@@ -1207,6 +1207,30 @@
     box.append(sec);
   }
 
+  /* ---------- Home: what has been asked for and is not finished yet ---------- */
+  let reqTried = 0;
+  function renderOnItsWay(box) {
+    if (!relayReady() && !outbox().length) return;
+    const cache = store.get('tp.requests', null);
+    if (relayReady() && online() && Date.now() - reqTried > 120000 && (!cache || Date.now() - cache.at > 120000)) { reqTried = Date.now(); loadRequests(); }
+    const queued = outbox().map((x) => ({ title: x.title, state: 'queued' }));
+    const open = ((cache && cache.items) || []).filter((x) => x.state === 'open' && !queued.some((q) => q.title === x.title.replace(/^Episode request:\s*/i, '')));
+    const all = queued.concat(open);
+    if (!all.length) return;
+    const sec = mk('section', 'shelf inworks', '');
+    sec.append(mk('h2', '', 'On its way'));
+    all.forEach((x) => {
+      const row = mk('div', 'iw', '');
+      row.append(mk('span', 'iw-t', x.title.replace(/^Episode request:\s*/i, '')));
+      const eta = mk('span', 'rq-eta', etaText(x.state)); eta.dataset.eta = x.state; row.append(eta);
+      sec.append(row);
+    });
+    const more = mk('button', 'linkish', 'See all requests'); more.type = 'button';
+    more.addEventListener('click', () => { location.hash = '#/create'; });
+    sec.append(more);
+    box.append(sec);
+  }
+
   function renderHome() {
     const visible = library.filter((x) => !hidden.includes(x.id));
     renderPlaceChips($('home-places'), [...new Set(visible.map((x) => x.place).filter(Boolean))]);
@@ -1220,6 +1244,7 @@
       return;
     }
     renderWelcome(box);
+    renderOnItsWay(box);
     renderNear(box);
     renderPacks(box, visible);
     const shelf = (title, sub) => { const s = mk('section', 'shelf', ''); s.append(mk('h2', '', title)); if (sub) s.append(mk('p', 'sub', sub)); box.append(s); return s; };
@@ -1475,7 +1500,7 @@
       out.className = 'cr-ok';
       out.textContent = queued
         ? 'No connection right now. Your request is saved on this phone as "' + label + '" and goes out by itself the next time the app is open with a connection. You can ask for another.'
-        : 'Sent: ' + label + '. Claude picks requests up five times a day. The form is clear, so you can ask for another.';
+        : 'Sent: ' + label + '. ' + etaText('open') + ' The form is clear, so you can ask for another.';
       showToast(queued ? 'Saved. Will send when you are online.' : 'Request sent.');
       $('create-form').reset(); $('cr-out').hidden = true; syncCreateForm();
       justSent = { title: label, at: Date.now() };
@@ -1569,6 +1594,37 @@
     }
     $('rp-send').disabled = false;
   }
+
+  /* ---------- when Claude next checks for requests (the scheduled task runs at these Brussels times) ---------- */
+  const RUNS = { tz: 'Europe/Brussels', hours: [7, 10, 13, 16, 19], minute: 17, busyMin: 25 };
+  function runClock(now) {
+    now = now || new Date();
+    const f = new Intl.DateTimeFormat('en-GB', { timeZone: RUNS.tz, hourCycle: 'h23', hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(now);
+    const g = (t) => +f.find((x) => x.type === t).value;
+    const nowSec = g('hour') * 3600 + g('minute') * 60 + g('second');
+    const slots = RUNS.hours.map((h) => h * 3600 + RUNS.minute * 60);
+    let next = slots.find((s) => s > nowSec), wait;
+    if (next == null) { next = slots[0] + 86400; }
+    wait = (next - nowSec) * 1000 - now.getMilliseconds();
+    const past = slots.filter((s) => s <= nowSec).pop();
+    const sinceLast = past == null ? (nowSec + 86400 - slots[slots.length - 1]) / 60 : (nowSec - past) / 60;
+    return { at: new Date(now.getTime() + wait), wait, running: sinceLast < RUNS.busyMin };
+  }
+  function untilText(ms) {
+    const m = Math.max(1, Math.round(ms / 60000));
+    if (m < 60) return m + ' min';
+    const h = Math.floor(m / 60), r = m % 60;
+    return h + ' h' + (r ? ' ' + r + ' min' : '');
+  }
+  const clockText = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  // One line for a request that has not been written yet; refreshed every 30 seconds by tickEta().
+  function etaText(state) {
+    if (state === 'queued') return 'Saved on this phone. It sends as soon as you are online.';
+    const c = runClock();
+    if (c.running) return 'Claude is checking requests right now. Writing takes about 5 to 15 minutes, then the audio takes 25 to 40.';
+    return 'Claude\u2019s next check is at ' + clockText(c.at) + ', in ' + untilText(c.wait) + '. Then about 5 to 15 minutes to write and 25 to 40 for the audio.';
+  }
+  function tickEta() { document.querySelectorAll('[data-eta]').forEach((el) => { el.textContent = etaText(el.dataset.eta); }); }
   let justSent = null;
   // "Overview: Antwerp" -> the newest matching episode, so a finished request opens straight to its result
   function requestEpisode(title) {
@@ -1595,6 +1651,7 @@
         b.addEventListener('click', () => { location.hash = '#/e/' + encodeURIComponent(found.id); });
         li.append(t, b);
       } else li.append(t, mk('span', 'rq-s' + (x.state === 'closed' ? ' done' : ''), x.state === 'closed' ? 'Done' : x.state === 'queued' ? 'Waiting to send' : 'Waiting'));
+      if (x.state !== 'closed') { const eta = mk('span', 'rq-eta', etaText(x.state)); eta.dataset.eta = x.state; li.append(eta); }
       ul.append(li);
     });
     $('cr-list-note').textContent = note || '';
@@ -1610,6 +1667,7 @@
       const items = (await res.json()).filter((x) => !x.pull_request).map((x) => ({ title: x.title, state: x.state }));
       store.set('tp.requests', { at: Date.now(), items });
       drawRequests(items, '');
+      if (view === 'home') renderLibrary();
     } catch (err) {
       // GitHub only allows a few anonymous lookups an hour per network, and a ship's Wi-Fi shares one network
       if (cached && cached.items) drawRequests(cached.items, 'Could not reach GitHub just now. This is the list from ' + new Date(cached.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '. Tap Check again later.');
@@ -2913,6 +2971,7 @@
     window.addEventListener('hashchange', route);
     window.addEventListener('online', syncOnline); window.addEventListener('offline', syncOnline);
     setInterval(() => { if (outbox().length) flushOutbox(); }, 60000);
+    setInterval(tickEta, 30000);
     route();
     syncOnline();
     checkForUpdate();
