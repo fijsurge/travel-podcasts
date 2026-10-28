@@ -38,7 +38,7 @@ The **Report a problem** button (player and walk screen) sends a note through th
 and closes the issue with a comment.
 
 **Updating the Worker:** when `relay/worker.js` changes, open the Worker in Cloudflare, **Edit code**, replace everything
-with the new file, and **Deploy**. Secrets stay as they are. The app tells you if the Worker is too old for reports.
+with the new file, and **Deploy**. Secrets stay as they are. This is optional: with the older Worker, the app still sends reports (as requests titled "Problem report:") and the scheduled task handles them the same way.
 
 ## Safety
 - The key can only create and read issues in this one repository.

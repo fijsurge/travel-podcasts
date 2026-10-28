@@ -1476,10 +1476,12 @@
     lines.push('', 'What the listener said: ' + note);
     $('rp-send').disabled = true; out.textContent = 'Sending\u2026';
     try {
-      // An older relay would file this as an episode request, so check it knows about reports first.
+      // A newer relay files this under its own label. An older one has no such label, so the report goes in as a
+      // request whose title starts "Problem report:", which the scheduled task also treats as a report.
       const p = await relayPost({ ping: true });
-      if (p.ok && !(p.data && p.data.feedback)) { out.textContent = 'The relay needs a small update before it can take reports. Paste the new relay/worker.js into Cloudflare (steps are in relay/README.md).'; $('rp-send').disabled = false; return; }
-      const r = await relayPost({ kind: 'feedback', title: names[k] + ': ' + c.title + ', ' + c.chapter, text: lines.join('\n') });
+      const legacy = p.ok && !(p.data && p.data.feedback);
+      const title = names[k] + ': ' + c.title + ', ' + c.chapter;
+      const r = await relayPost(legacy ? { title: 'Problem report: ' + title, text: 'PROBLEM REPORT (not an episode request)\n' + lines.join('\n') } : { kind: 'feedback', title, text: lines.join('\n') });
       if (r.ok) { $('dlg-report').close(); showToast('Report sent. Claude will fix it on the next pass.'); return; }
       out.textContent = (r.data && r.data.error) || ('The relay answered ' + r.status + '. If it keeps failing, the relay may need updating (see the relay README).');
     } catch (err) { out.textContent = 'Could not reach the relay. Check your connection and try again.'; }
