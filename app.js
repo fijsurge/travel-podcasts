@@ -487,84 +487,93 @@
   }
 
   function selectStop(k, pan) {
-    const w = walkState(); if (!w) return;
+    const w = walkState(); if (!w || !w.stops[k]) return;
     walkSel = k;
-    [...$('walk-stops').children].forEach((li, i) => li.setAttribute('aria-current', String(i === k)));
+    const st = w.stops[k];
+    [...$('walk-chips').children].forEach((bt, i) => bt.setAttribute('aria-current', String(i === k)));
     walkPins.forEach((m, i) => { const el = m.getElement(); if (el) el.classList.toggle('sel', i === k); });
+    $('mf-name').textContent = (k + 1) + '. ' + st.name;
+    $('mf-leg').textContent = legText(w.stops, k);
+    $('mf-how').textContent = st.hint;
+    $('mf-dir').href = dirUrl(st);
+    $('mf-play').onclick = () => { closeWalkMap(); gotoChapter(st.ch, true); };
+    if (walkGps) showYou(walkGps, true);
     if (pan && walkMap && walkPins[k]) walkMap.panTo(walkPins[k].getLatLng());
-    const li = $('walk-stops').children[k]; if (li && pan === 'list') li.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 
-  function renderWalkStops(w) {
-    const ol = $('walk-stops'); ol.textContent = '';
+  function renderWalkChips(w) {
+    const box = $('walk-chips'); box.textContent = '';
     w.stops.forEach((st, k) => {
-      const li = mk('li', '', ''); li.dataset.k = k;
-      li.append(mk('span', 'num', String(k + 1)), mk('div', 'nm', st.name));
-      const leg = mk('p', 'leg', legText(w.stops, k)); leg.id = 'leg-' + k; li.append(leg);
-      if (st.hint) li.append(mk('p', 'how', st.hint));
-      const acts = mk('div', 'acts', '');
-      const a = mk('a', 'btn-sm', 'Directions'); a.href = dirUrl(st); a.target = '_blank'; a.rel = 'noopener';
-      const pl = mk('button', 'btn-sm ghost', 'Play this stop'); pl.type = 'button';
-      pl.addEventListener('click', () => { $('dlg-map').close(); gotoChapter(st.ch, true); });
-      acts.append(a, pl); li.append(acts);
-      li.addEventListener('click', (ev) => { if (!ev.target.closest('a, button')) selectStop(k, true); });
-      ol.append(li);
+      const b = mk('button', k === w.next ? 'next' : '', String(k + 1)); b.type = 'button';
+      b.setAttribute('aria-label', 'Stop ' + (k + 1) + ': ' + st.name);
+      b.addEventListener('click', () => selectStop(k, true));
+      box.append(b);
     });
     $('map-whole').href = wholeWalkUrl(w.stops);
   }
+
+  let mapPushed = false;
+  function closeWalkMap() { const d = $('dlg-map'); if (d.open) d.close(); }
 
   async function openWalkMap(focus) {
     const w = walkState(); if (!w) return;
     const target = focus != null ? focus : (w.next != null ? w.next : Math.max(0, w.cur));
     $('map-title').textContent = ep.title.replace(/^Walking\s+/i, '');
-    renderWalkStops(w);
-    $('map-gps-note').textContent = walkWatch == null ? 'Uses your location only on this phone.' : '';
+    renderWalkChips(w);
+    $('map-gps-note').textContent = '';
     $('map-gps').textContent = walkWatch == null ? 'Show where I am' : 'Hide my location';
+    $('map-gps').setAttribute('aria-pressed', String(walkWatch != null));
     const dlg = $('dlg-map'); dlg.showModal();
+    if (!mapPushed) { history.pushState({ tpMap: 1 }, ''); mapPushed = true; } // the phone's back button closes the map, not the player
     selectStop(target, false);
     const box = $('walk-map'); box.classList.remove('offline');
     try {
       const L = await loadLeaflet();
       if (walkMap) { walkMap.remove(); walkMap = null; walkPins = []; walkYou = null; }
       box.textContent = '';
-      walkMap = L.map(box, { zoomControl: true, attributionControl: true, tap: true });
+      walkMap = L.map(box, { zoomControl: false, attributionControl: true, tap: true });
+      L.control.zoom({ position: 'bottomleft' }).addTo(walkMap);
       L.tileLayer(OSM_TILES, { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(walkMap);
-      const pts = w.stops.map((s) => [s.lat, s.lon]);
+      const pts = w.stops.map((x) => [x.lat, x.lon]);
       L.polyline(pts, { color: '#f0b93b', weight: 4, opacity: .95, dashArray: '2 9', lineCap: 'round' }).addTo(walkMap);
-      walkPins = w.stops.map((s, k) => {
-        const m = L.marker([s.lat, s.lon], { icon: L.divIcon({ className: 'walk-pin' + (k === w.next ? ' next' : ''), html: '<span>' + (k + 1) + '</span>', iconSize: [34, 34], iconAnchor: [17, 17] }), keyboard: true, title: 'Stop ' + (k + 1) + ': ' + s.name }).addTo(walkMap);
-        m.on('click', () => selectStop(k, 'list'));
+      walkPins = w.stops.map((x, k) => {
+        const m = L.marker([x.lat, x.lon], { icon: L.divIcon({ className: 'walk-pin' + (k === w.next ? ' next' : ''), html: '<span>' + (k + 1) + '</span>', iconSize: [34, 34], iconAnchor: [17, 17] }), keyboard: true, title: 'Stop ' + (k + 1) + ': ' + x.name }).addTo(walkMap);
+        m.on('click', () => selectStop(k, true));
         return m;
       });
-      walkMap.fitBounds(L.latLngBounds(pts), { padding: [34, 34], maxZoom: 17 });
-      setTimeout(() => { if (walkMap) { walkMap.invalidateSize(); walkMap.fitBounds(L.latLngBounds(pts), { padding: [34, 34], maxZoom: 17 }); selectStop(walkSel, false); } }, 120);
+      const fit = () => { walkMap.invalidateSize(); walkMap.fitBounds(L.latLngBounds(pts), { padding: [48, 48], maxZoom: 17 }); selectStop(walkSel, false); };
+      fit(); setTimeout(() => { if (walkMap) fit(); }, 150);
       if (walkWatch != null && walkGps) showYou(walkGps);
     } catch (err) {
       box.classList.add('offline');
-      box.textContent = 'The map needs an internet connection the first time. The stops below and the Directions buttons still work.';
+      box.textContent = 'The map needs an internet connection the first time. Directions and the stop details below still work.';
     }
   }
 
-  function showYou(pos) {
+  function showYou(pos, noMove) {
     walkGps = pos;
     const L = window.L, w = walkState();
-    if (L && walkMap) {
+    if (L && walkMap && !noMove) {
       const ll = [pos.coords.latitude, pos.coords.longitude];
       if (!walkYou) walkYou = { dot: L.circleMarker(ll, { radius: 8, color: '#fff', weight: 3, fillColor: '#2a6c8b', fillOpacity: 1 }).addTo(walkMap), ring: L.circle(ll, { radius: pos.coords.accuracy || 30, color: '#2a6c8b', weight: 1, fillOpacity: .12 }).addTo(walkMap) };
       else { walkYou.dot.setLatLng(ll); walkYou.ring.setLatLng(ll).setRadius(pos.coords.accuracy || 30); }
     }
-    if (w) {
-      const at = w.next != null ? w.next : Math.max(0, w.cur), st = w.stops[at];
+    const st = w && w.stops[walkSel];
+    if (st) {
       const m = metres(pos.coords.latitude, pos.coords.longitude, st.lat, st.lon);
-      $('map-gps-note').textContent = m < 40 ? 'You are at stop ' + (at + 1) + '.' : 'You are ' + fmtDist(m) + ' ' + heading(st.lat, st.lon, pos.coords.latitude, pos.coords.longitude) + ' of stop ' + (at + 1) + ' (about ' + walkTime(m) + ').';
+      $('map-gps-note').textContent = m < 40 ? 'You are at stop ' + (walkSel + 1) + '.' : 'You are ' + fmtDist(m) + ' ' + heading(st.lat, st.lon, pos.coords.latitude, pos.coords.longitude) + ' of stop ' + (walkSel + 1) + ' (about ' + walkTime(m) + ' on foot).';
     }
   }
   function toggleWalkGps() {
-    if (walkWatch != null) { stopWalkGps(); $('map-gps').textContent = 'Show where I am'; $('map-gps-note').textContent = 'Uses your location only on this phone.'; return; }
+    const btn = $('map-gps');
+    if (walkWatch != null) { stopWalkGps(); btn.textContent = 'Show where I am'; btn.setAttribute('aria-pressed', 'false'); $('map-gps-note').textContent = ''; return; }
     if (!navigator.geolocation) { $('map-gps-note').textContent = 'This browser cannot share a location.'; return; }
-    $('map-gps').textContent = 'Hide my location'; $('map-gps-note').textContent = 'Finding you…';
-    walkWatch = navigator.geolocation.watchPosition(showYou, (err) => {
-      stopWalkGps(); $('map-gps').textContent = 'Show where I am';
+    btn.textContent = 'Hide my location'; btn.setAttribute('aria-pressed', 'true'); $('map-gps-note').textContent = 'Finding you…';
+    walkWatch = navigator.geolocation.watchPosition((pos) => {
+      const first = !walkGps; showYou(pos);
+      if (first && walkMap && window.L) walkMap.fitBounds(window.L.latLngBounds([[pos.coords.latitude, pos.coords.longitude], [walkPins[walkSel].getLatLng().lat, walkPins[walkSel].getLatLng().lng]]), { padding: [60, 60], maxZoom: 17 });
+    }, (err) => {
+      stopWalkGps(); btn.textContent = 'Show where I am'; btn.setAttribute('aria-pressed', 'false');
       $('map-gps-note').textContent = err.code === 1 ? 'Location is blocked. Allow it for this site in your browser settings.' : 'Could not find you yet. Try again outdoors.';
     }, { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 });
   }
@@ -2074,23 +2083,34 @@
 
   /* ---------- keep the app current: a page left open in the background never reloads itself ---------- */
   let appStamp = null;
-  async function appVersion() {
+  const hashText = (t) => { let h = 0; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0; return (h >>> 0).toString(16).padStart(8, '0'); };
+  async function appVersion(mode) {
     try {
-      const r = await fetch('app.js', { cache: 'no-store' });
+      const r = await fetch('app.js', { cache: mode });
       if (!r.ok) return null;
-      const t = await r.text();
-      let h = 0; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0;
-      return t.length + ':' + h;
+      return hashText(await r.text());
     } catch (err) { return null; }
   }
+  // The browser may hand out an app.js up to 10 minutes old. So the first check compares the newest copy with the copy
+  // the page most likely started from (the cached one), instead of with itself.
   async function checkForUpdate() {
-    const v = await appVersion();
-    if (!v) return;
-    if (appStamp === null) { appStamp = v; return; }
-    if (v === appStamp) return;
+    if (appStamp === null) {
+      appStamp = await appVersion('force-cache');
+      const el = $('app-version'); if (el) el.textContent = 'Version ' + (appStamp || 'unknown');
+    }
+    const v = await appVersion('no-store');
+    if (!v || !appStamp || v === appStamp) return;
     if (!playing) { location.reload(); return; }
     showToast('A new version is ready. It will load when you pause or reopen the app.');
     appStamp = v; updatePending = true;
+  }
+  async function reloadNow() {
+    const btn = $('app-reload'); btn.disabled = true; btn.textContent = 'Getting it…';
+    try {
+      const reg = await navigator.serviceWorker.getRegistration(); if (reg) await reg.update();
+      await Promise.all(['index.html', 'app.js', 'style.css', 'library.json', 'audio/manifest.json', 'sw.js'].map((u) => fetch(u, { cache: 'reload' }).catch(() => {})));
+    } catch (err) { /* reload anyway */ }
+    location.reload();
   }
   let updatePending = false;
 
@@ -2167,9 +2187,25 @@
     $('queue-open').addEventListener('click', openQueue);
     $('queue-clear').addEventListener('click', () => { queue = []; saveQueue(); updateQueueUi(); openQueue(); });
     $('ver-btn').addEventListener('click', openVersions);
+    $('app-reload').addEventListener('click', reloadNow);
     $('map-btn').addEventListener('click', () => openWalkMap());
     $('map-gps').addEventListener('click', toggleWalkGps);
-    $('dlg-map').addEventListener('close', stopWalkGps);
+    $('map-close').addEventListener('click', closeWalkMap);
+    $('dlg-map').addEventListener('close', () => {
+      stopWalkGps();
+      if (mapPushed) { mapPushed = false; if (history.state && history.state.tpMap) history.back(); }
+    });
+    window.addEventListener('popstate', () => { if ($('dlg-map').open) { mapPushed = false; $('dlg-map').close(); } });
+    // every sheet gets a close button at the top, and tapping outside it closes it too
+    document.querySelectorAll('dialog').forEach((d) => {
+      const sheet = d.querySelector(':scope > form.sheet');
+      if (sheet && !sheet.querySelector(':scope > .x')) {
+        const x = mk('button', 'icon-btn x', ''); x.type = 'submit'; x.value = 'close'; x.setAttribute('aria-label', 'Close');
+        x.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+        sheet.prepend(x);
+      }
+      d.addEventListener('click', (ev) => { if (ev.target === d && d.id !== 'dlg-map') d.close(); });
+    });
     let st = null;
     $('search-input').addEventListener('input', (e) => { clearTimeout(st); st = setTimeout(() => runSearch(e.target.value), 120); });
     $('cr-kind').addEventListener('change', syncCreateForm);

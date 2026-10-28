@@ -1,5 +1,5 @@
 /* Offline support: files are fetched fresh when online and served from cache when offline. */
-const CACHE = 'travel-podcasts-v5';
+const CACHE = 'travel-podcasts-v6';
 const TILE_CACHE = 'tp-tiles-v1'; // map tiles you have looked at, so the walking map still draws offline
 const AUDIO_CACHE = 'tp-audio-v1'; // filled by the page ("Save for offline"); never deleted here
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'library.json',
@@ -60,7 +60,8 @@ self.addEventListener('fetch', (e) => {
   const fresh = true; // network first so updates arrive; cache is the offline fallback
   e.respondWith(
     fresh
-      ? fetch(req).then((r) => { const copy = r.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); return r; })
+      ? fetch(req.url, { cache: 'no-cache' }).then((r) => { // revalidate: the browser's own 10-minute cache must not hide an update
+        if (!r.ok && r.status !== 304) throw new Error('http ' + r.status); const copy = r.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); return r; })
           .catch(() => caches.match(req).then((m) => m || (req.mode === 'navigate' ? caches.match('index.html') : Response.error())))
       : caches.match(req).then((m) => m || fetch(req).then((r) => { const copy = r.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); return r; }))
   );
