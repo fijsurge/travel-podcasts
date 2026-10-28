@@ -454,26 +454,6 @@
     if (cur < 0) cur = chIdx < stops[0].ch ? -1 : stops.length - 1;
     return { stops, cur, next: cur + 1 < stops.length ? cur + 1 : null };
   }
-  function updateWalkCard() {
-    const card = $('walk-card'), btn = $('map-btn'), w = walkState();
-    card.hidden = btn.hidden = !w;
-    if (!w) return;
-    card.textContent = '';
-    const { stops, cur, next } = w;
-    card.append(mk('div', 'wc-now', cur < 0 ? 'Before the first stop' : 'Stop ' + (cur + 1) + ' of ' + stops.length + ' · ' + stops[cur].name));
-    if (next == null) {
-      card.append(mk('div', 'wc-next', 'That was the last stop'));
-    } else {
-      const n = stops[next];
-      card.append(mk('div', 'wc-next', (cur < 0 ? 'Head to ' : 'Next: ') + n.name));
-      card.append(mk('div', 'wc-how', (cur < 0 ? '' : legText(stops, next) + '. ') + n.hint));
-      const acts = mk('div', 'wc-acts', '');
-      const a = mk('a', 'btn-sm', 'Directions'); a.href = dirUrl(n); a.target = '_blank'; a.rel = 'noopener';
-      const m = mk('button', 'btn-sm ghost', 'See on map'); m.type = 'button'; m.addEventListener('click', () => openWalkMap(next));
-      acts.append(a, m); card.append(acts);
-    }
-  }
-
   function loadLeaflet() {
     if (window.L) return Promise.resolve(window.L);
     if (leafletLoad) return leafletLoad;
@@ -486,8 +466,28 @@
     return leafletLoad;
   }
 
-  function selectStop(k, pan) {
+  let walkEpId = '', manualSelAt = 0, mapPushed = false, scriptShown = false;
+  const walkPref = { gps: () => store.get('tp.walkgps', false) === true, setGps: (v) => store.set('tp.walkgps', v) };
+
+  // The map, the stop buttons and the stop details are one block. It sits in the player page, and moves into the
+  // full-screen dialog (and back) so there is only ever one map to keep in step.
+  function placeWalkView(where) {
+    const v = $('walk-view'), full = where === 'full';
+    $(full ? 'walk-slot-full' : 'walk-slot-inline').append(v);
+    v.classList.toggle('inline', !full); v.classList.toggle('full', full);
+    refitWalkMap();
+  }
+  function refitWalkMap() {
+    [60, 250].forEach((ms) => setTimeout(() => {
+      if (!walkMap || !window.L || $('walk-view').hidden) return;
+      walkMap.invalidateSize();
+      const w = walkState(); if (w) walkMap.fitBounds(window.L.latLngBounds(w.stops.map((x) => [x.lat, x.lon])), { paddingTopLeft: [40, 56], paddingBottomRight: [40, 36], maxZoom: 17 });
+    }, ms));
+  }
+
+  function selectStop(k, pan, manual) {
     const w = walkState(); if (!w || !w.stops[k]) return;
+    if (manual) manualSelAt = Date.now();
     walkSel = k;
     const st = w.stops[k];
     [...$('walk-chips').children].forEach((bt, i) => bt.setAttribute('aria-current', String(i === k)));
@@ -506,48 +506,83 @@
     w.stops.forEach((st, k) => {
       const b = mk('button', k === w.next ? 'next' : '', String(k + 1)); b.type = 'button';
       b.setAttribute('aria-label', 'Stop ' + (k + 1) + ': ' + st.name);
-      b.addEventListener('click', () => selectStop(k, true));
+      b.addEventListener('click', () => selectStop(k, true, true));
       box.append(b);
     });
     $('map-whole').href = wholeWalkUrl(w.stops);
   }
 
-  let mapPushed = false;
-  function closeWalkMap() { const d = $('dlg-map'); if (d.open) d.close(); }
-
-  async function openWalkMap(focus) {
-    const w = walkState(); if (!w) return;
-    const target = focus != null ? focus : (w.next != null ? w.next : Math.max(0, w.cur));
-    $('map-title').textContent = ep.title.replace(/^Walking\s+/i, '');
-    renderWalkChips(w);
-    $('map-gps-note').textContent = '';
-    $('map-gps').textContent = walkWatch == null ? 'Show where I am' : 'Hide my location';
-    $('map-gps').setAttribute('aria-pressed', String(walkWatch != null));
-    const dlg = $('dlg-map'); dlg.showModal();
-    if (!mapPushed) { history.pushState({ tpMap: 1 }, ''); mapPushed = true; } // the phone's back button closes the map, not the player
-    selectStop(target, false);
+  async function initWalkMap(w) {
     const box = $('walk-map'); box.classList.remove('offline');
     try {
       const L = await loadLeaflet();
+      if (!ep || walkEpId !== ep.id || $('walk-view').hidden) return;
       if (walkMap) { walkMap.remove(); walkMap = null; walkPins = []; walkYou = null; }
       box.textContent = '';
-      walkMap = L.map(box, { zoomControl: false, attributionControl: true, tap: true });
+      walkMap = L.map(box, { zoomControl: false, attributionControl: true, tap: true, zoomSnap: 0.25 });
       L.control.zoom({ position: 'bottomleft' }).addTo(walkMap);
       L.tileLayer(OSM_TILES, { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(walkMap);
       const pts = w.stops.map((x) => [x.lat, x.lon]);
       L.polyline(pts, { color: '#f0b93b', weight: 4, opacity: .95, dashArray: '2 9', lineCap: 'round' }).addTo(walkMap);
       walkPins = w.stops.map((x, k) => {
         const m = L.marker([x.lat, x.lon], { icon: L.divIcon({ className: 'walk-pin' + (k === w.next ? ' next' : ''), html: '<span>' + (k + 1) + '</span>', iconSize: [34, 34], iconAnchor: [17, 17] }), keyboard: true, title: 'Stop ' + (k + 1) + ': ' + x.name }).addTo(walkMap);
-        m.on('click', () => selectStop(k, true));
+        m.on('click', () => selectStop(k, true, true));
         return m;
       });
-      const fit = () => { walkMap.invalidateSize(); walkMap.fitBounds(L.latLngBounds(pts), { padding: [48, 48], maxZoom: 17 }); selectStop(walkSel, false); };
-      fit(); setTimeout(() => { if (walkMap) fit(); }, 150);
+      walkMap.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [40, 56], paddingBottomRight: [40, 36], maxZoom: 17 });
+      refitWalkMap();
+      selectStop(walkSel, false);
       if (walkWatch != null && walkGps) showYou(walkGps);
     } catch (err) {
       box.classList.add('offline');
       box.textContent = 'The map needs an internet connection the first time. Directions and the stop details below still work.';
     }
+  }
+
+  function setScriptShown(on, remember) {
+    scriptShown = on;
+    $('reader').hidden = !on;
+    $('script-btn').setAttribute('aria-pressed', String(on));
+    $('script-label').textContent = on ? 'Hide script' : 'Show script';
+    if (remember) store.set('tp.walkscript', on);
+    if (on) { following = true; hideFollowPill(); }
+  }
+
+  // Called whenever the open episode or chapter changes.
+  function updateWalkCard() {
+    const w = walkState(), wv = $('walk-view');
+    $('script-btn').hidden = !w;
+    $('view-player').classList.toggle('walk-on', !!w);
+    if (!w) {
+      wv.hidden = true; $('reader').hidden = false; stopWalkGps();
+      if (walkMap) { walkMap.remove(); walkMap = null; walkPins = []; walkYou = null; }
+      walkEpId = ''; return;
+    }
+    if (walkEpId !== ep.id) {
+      walkEpId = ep.id; manualSelAt = 0;
+      wv.hidden = false;
+      setScriptShown(store.get('tp.walkscript', false) === true, false); // the script stays out of the way while walking
+      renderWalkChips(w);
+      walkSel = w.next != null ? w.next : Math.max(0, w.cur);
+      selectStop(walkSel, false);
+      initWalkMap(w);
+    } else {
+      // keep the highlighted "next" stop in step with the chapter, unless you just picked a stop yourself
+      [...$('walk-chips').children].forEach((b, i) => b.classList.toggle('next', i === w.next));
+      walkPins.forEach((m, i) => { const el = m.getElement(); if (el) el.classList.toggle('next', i === w.next); });
+      if (Date.now() - manualSelAt > 60000) selectStop(w.next != null ? w.next : Math.max(0, w.cur), !!walkMap);
+    }
+    if (walkPref.gps() && walkWatch == null && view === 'player') startWalkGps(true);
+  }
+
+  function closeWalkMap() { const d = $('dlg-map'); if (d.open) d.close(); }
+  function openWalkMap(focus) {
+    const w = walkState(); if (!w) return;
+    $('map-title').textContent = ep.title.replace(/^Walking\s+/i, '');
+    placeWalkView('full');
+    $('dlg-map').showModal();
+    if (!mapPushed) { history.pushState({ tpMap: 1 }, ''); mapPushed = true; } // the phone's back button closes the map, not the player
+    if (focus != null) selectStop(focus, true, true);
   }
 
   function showYou(pos, noMove) {
@@ -564,24 +599,43 @@
       $('map-gps-note').textContent = m < 40 ? 'You are at stop ' + (walkSel + 1) + '.' : 'You are ' + fmtDist(m) + ' ' + heading(st.lat, st.lon, pos.coords.latitude, pos.coords.longitude) + ' of stop ' + (walkSel + 1) + ' (about ' + walkTime(m) + ' on foot).';
     }
   }
-  function toggleWalkGps() {
-    const btn = $('map-gps');
-    if (walkWatch != null) { stopWalkGps(); btn.textContent = 'Show where I am'; btn.setAttribute('aria-pressed', 'false'); $('map-gps-note').textContent = ''; return; }
-    if (!navigator.geolocation) { $('map-gps-note').textContent = 'This browser cannot share a location.'; return; }
-    btn.textContent = 'Hide my location'; btn.setAttribute('aria-pressed', 'true'); $('map-gps-note').textContent = 'Finding you…';
+  function setGpsButton(on) { const b = $('map-gps'); b.textContent = on ? 'Hide my location' : 'Show where I am'; b.setAttribute('aria-pressed', String(on)); }
+  function startWalkGps(quiet) {
+    if (!navigator.geolocation) { if (!quiet) $('map-gps-note').textContent = 'This browser cannot share a location.'; return; }
+    setGpsButton(true); if (!quiet) $('map-gps-note').textContent = 'Finding you…';
     walkWatch = navigator.geolocation.watchPosition((pos) => {
       const first = !walkGps; showYou(pos);
-      if (first && walkMap && window.L) walkMap.fitBounds(window.L.latLngBounds([[pos.coords.latitude, pos.coords.longitude], [walkPins[walkSel].getLatLng().lat, walkPins[walkSel].getLatLng().lng]]), { padding: [60, 60], maxZoom: 17 });
+      if (first && walkMap && window.L && walkPins[walkSel]) walkMap.fitBounds(window.L.latLngBounds([[pos.coords.latitude, pos.coords.longitude], walkPins[walkSel].getLatLng()]), { paddingTopLeft: [50, 64], paddingBottomRight: [50, 44], maxZoom: 17 });
     }, (err) => {
-      stopWalkGps(); btn.textContent = 'Show where I am'; btn.setAttribute('aria-pressed', 'false');
+      stopWalkGps(); walkPref.setGps(false);
       $('map-gps-note').textContent = err.code === 1 ? 'Location is blocked. Allow it for this site in your browser settings.' : 'Could not find you yet. Try again outdoors.';
     }, { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 });
   }
+  function toggleWalkGps() {
+    if (walkWatch != null) { stopWalkGps(); walkPref.setGps(false); $('map-gps-note').textContent = ''; return; }
+    walkPref.setGps(true); startWalkGps(false);
+  }
   function stopWalkGps() {
-    if (walkWatch != null) navigator.geolocation.clearWatch(walkWatch);
-    walkWatch = null; walkGps = null;
+    if (walkWatch != null && navigator.geolocation) navigator.geolocation.clearWatch(walkWatch);
+    walkWatch = null; walkGps = null; setGpsButton(false);
     if (walkYou) { walkYou.dot.remove(); walkYou.ring.remove(); walkYou = null; }
   }
+
+  /* ---------- the script follows what is playing, until you scroll away ---------- */
+  let following = true;
+  const hideFollowPill = () => { $('follow-pill').hidden = true; };
+  function activeVisible() {
+    const el = spans && spans.find((x) => x.classList.contains('active')); if (!el) return true;
+    const r = el.getBoundingClientRect(), tr = $('transport').getBoundingClientRect();
+    return r.bottom > 60 && r.top < (tr.top || window.innerHeight);
+  }
+  function userScrolled() {
+    if (view !== 'player' || $('reader').hidden) return;
+    following = false;
+    clearTimeout(userScrolled.t);
+    userScrolled.t = setTimeout(() => { if (activeVisible()) { following = true; hideFollowPill(); } else $('follow-pill').hidden = false; }, 700);
+  }
+  function resumeFollow() { following = true; hideFollowPill(); const el = spans.find((x) => x.classList.contains('active')); if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
 
   /* ---------- organizing: remove/hide, place filter, playlists ---------- */
   let hidden = store.get('tp.hidden', []);
@@ -1788,6 +1842,7 @@
       if (curBlobUrl) { URL.revokeObjectURL(curBlobUrl); curBlobUrl = null; }
     }
     $('ch-label').textContent = ch.label;
+    following = true; hideFollowPill();
     drawHero();
     updateScrub(true);
     $('ch-meta').textContent = `${chIdx + 1} of ${ep.chapters.length} · ${mode === 'audio' ? 'natural voice' : naturalOnly(ep) ? 'audio ' + STATE_TEXT[chapterState(ep, chIdx)] : 'phone voice'}`;
@@ -1813,7 +1868,7 @@
     });
     if (!(mode === 'audio' && audioEl.duration)) setBar(units.length ? Math.round((i / units.length) * 100) : 0);
     updateScrub();
-    if (scroll && spans[i]) {
+    if (scroll && spans[i] && following) {
       const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       spans[i].scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' });
     }
@@ -1846,6 +1901,7 @@
     view = v;
     ['home', 'search', 'create', 'library', 'playlist', 'player'].forEach((n) => { $('view-' + n).hidden = n !== v; });
     $('transport').hidden = v !== 'player';
+    if (v !== 'player' && walkWatch != null) stopWalkGps(); // no location tracking while you are elsewhere in the app (your choice is remembered)
     document.body.classList.toggle('v-player', v === 'player');
     const isTab = !!TAB_HASH[v];
     $('back').hidden = isTab;
@@ -2188,11 +2244,15 @@
     $('queue-clear').addEventListener('click', () => { queue = []; saveQueue(); updateQueueUi(); openQueue(); });
     $('ver-btn').addEventListener('click', openVersions);
     $('app-reload').addEventListener('click', reloadNow);
-    $('map-btn').addEventListener('click', () => openWalkMap());
     $('map-gps').addEventListener('click', toggleWalkGps);
+    $('map-expand').addEventListener('click', () => openWalkMap());
+    $('script-btn').addEventListener('click', () => setScriptShown(!scriptShown, true));
+    $('follow-pill').addEventListener('click', resumeFollow);
+    ['touchmove', 'wheel'].forEach((t) => window.addEventListener(t, userScrolled, { passive: true }));
+    window.addEventListener('keydown', (e) => { if (['PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', 'Home', 'End', ' '].includes(e.key) && !/INPUT|TEXTAREA|SELECT|BUTTON/.test((e.target || {}).tagName || '')) userScrolled(); });
     $('map-close').addEventListener('click', closeWalkMap);
     $('dlg-map').addEventListener('close', () => {
-      stopWalkGps();
+      placeWalkView('inline');
       if (mapPushed) { mapPushed = false; if (history.state && history.state.tpMap) history.back(); }
     });
     window.addEventListener('popstate', () => { if ($('dlg-map').open) { mapPushed = false; $('dlg-map').close(); } });

@@ -136,14 +136,38 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
       </button>
       <button class="chip small" id="ver-btn" aria-haspopup="dialog" hidden><span id="ver-label">Version</span></button>
-      <button class="chip small" id="map-btn" aria-haspopup="dialog" hidden><span>Map</span></button>
+      <button class="chip small" id="script-btn" aria-pressed="false" hidden><span id="script-label">Show script</span></button>
       <button class="chip small" id="queue-btn" aria-haspopup="dialog"><span id="queue-label">Up next</span></button>
       <button class="chip small" id="sleep-btn" aria-haspopup="dialog"><span id="sleep-label">Sleep</span></button>
     </div>
     <div class="ch-meta" id="ch-meta"></div>
-    <section class="walk-card" id="walk-card" hidden aria-label="Where to walk next"></section>
+    <div class="walk-slot" id="walk-slot-inline">
+      <div class="walk-view inline" id="walk-view" hidden>
+        <div class="mf-mapwrap">
+          <div id="walk-map" class="walk-map" role="application" aria-label="Map of the walking tour"></div>
+          <div class="mf-fabs">
+            <button class="map-fab" id="map-gps" type="button" aria-pressed="false">Show where I am</button>
+            <a class="map-fab" id="map-whole" target="_blank" rel="noopener">Whole walk in Maps</a>
+            <button class="map-fab" id="map-expand" type="button">Full screen</button>
+          </div>
+        </div>
+        <section class="mf-panel" aria-live="polite">
+          <div class="mf-chips" id="walk-chips" role="group" aria-label="Stops"></div>
+          <div class="mf-name" id="mf-name"></div>
+          <p class="mf-leg" id="mf-leg"></p>
+          <p class="mf-how" id="mf-how"></p>
+          <p class="mf-gps" id="map-gps-note"></p>
+          <div class="mf-acts">
+            <a class="btn-sm" id="mf-dir" target="_blank" rel="noopener">Directions</a>
+            <button class="btn-sm ghost" id="mf-play" type="button">Play this stop</button>
+          </div>
+          <p class="fine mf-fine">The dashed line is straight, not the street route. Stop positions are accurate to about 50 meters.</p>
+        </section>
+      </div>
+    </div>
     <div class="bar" hidden><div class="bar-fill" id="bar-fill"></div></div>
     <article id="reader" class="reader" aria-live="off"></article>
+    <button class="follow-pill" id="follow-pill" type="button" hidden>Back to what's playing</button>
     <aside id="sources" class="sources" hidden></aside>
   </section>
 </main>
@@ -200,31 +224,13 @@
   <a href="#/create" data-tab="create"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span><span>Create</span></a>
 </nav>
 
-<!-- Walking map: full screen -->
+<!-- Walking map: full screen. The map and stop details move in here from the player page. -->
 <dialog id="dlg-map" class="map-full">
   <div class="mf-bar">
     <button class="icon-btn" id="map-close" type="button" aria-label="Back to the player"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg></button>
     <h2 id="map-title">Walking map</h2>
   </div>
-  <div class="mf-mapwrap">
-    <div id="walk-map" class="walk-map" role="application" aria-label="Map of the walking tour"></div>
-    <div class="mf-fabs">
-      <button class="map-fab" id="map-gps" type="button">Show where I am</button>
-      <a class="map-fab" id="map-whole" target="_blank" rel="noopener">Whole walk in Maps</a>
-    </div>
-  </div>
-  <section class="mf-panel" aria-live="polite">
-    <div class="mf-chips" id="walk-chips" role="group" aria-label="Stops"></div>
-    <div class="mf-name" id="mf-name"></div>
-    <p class="mf-leg" id="mf-leg"></p>
-    <p class="mf-how" id="mf-how"></p>
-    <p class="mf-gps" id="map-gps-note"></p>
-    <div class="mf-acts">
-      <a class="btn-sm" id="mf-dir" target="_blank" rel="noopener">Directions</a>
-      <button class="btn-sm ghost" id="mf-play" type="button">Play this stop</button>
-    </div>
-    <p class="fine">The dashed line is straight, not the street route. Stop positions are accurate to about 50 meters.</p>
-  </section>
+  <div class="mf-slot" id="walk-slot-full"></div>
 </dialog>
 
 <!-- Up next -->
