@@ -1346,6 +1346,56 @@
     } catch (err) { out.className = 'fine'; out.textContent = 'Could not reach the relay. Check your connection, then try again.'; }
     btn.disabled = false;
   }
+
+  // ---- Report a problem: goes through the same relay as episode requests, labelled "episode-feedback" ----
+  const REPORT_HINTS = {
+    name: ['Which word, and how should it sound?', 'For example: Scheldt sounds like Shelled, it is said Skelt'],
+    pin: ['Where should the pin be?', 'For example: the church is on the other side of the square'],
+    fact: ['What seems wrong, and what is right?', 'For example: the tower is older than it says'],
+    other: ['Tell us what happened', 'Anything that sounded or looked off'],
+  };
+  function reportContext() {
+    if (!ep) return null;
+    const ch = ep.chapters[chIdx] || {};
+    const st = walkState() ? stopsOf(ep)[walkSel] : null;
+    let at = ''; try { if (mode === 'audio' && audioEl.currentTime) at = ' at ' + Math.floor(audioEl.currentTime / 60) + ':' + String(Math.floor(audioEl.currentTime % 60)).padStart(2, '0'); } catch (e) { /* none */ }
+    return { id: ep.id, title: ep.title, chapter: ch.label || '', num: chIdx + 1, at, stop: st };
+  }
+  function openReport(pinFirst) {
+    const c = reportContext(); if (!c) return;
+    $('rp-where').textContent = c.title + ' \u00b7 ' + c.chapter + c.at;
+    $('rp-note').value = ''; $('rp-status').textContent = '';
+    const kinds = document.getElementsByName('rp-kind');
+    kinds.forEach((r) => { r.checked = r.value === (pinFirst ? 'pin' : 'name'); });
+    syncReportHint();
+    $('rp-send').disabled = false;
+    $('dlg-report').showModal();
+  }
+  function syncReportHint() {
+    const k = (document.querySelector('input[name="rp-kind"]:checked') || {}).value || 'name';
+    $('rp-note-label').textContent = REPORT_HINTS[k][0]; $('rp-note').placeholder = REPORT_HINTS[k][1];
+  }
+  async function sendReport() {
+    const c = reportContext(), out = $('rp-status');
+    const k = (document.querySelector('input[name="rp-kind"]:checked') || {}).value || 'other';
+    const note = $('rp-note').value.trim();
+    if (note.length < 3) { out.textContent = 'Add a few words so Claude knows what to fix.'; $('rp-note').focus(); return; }
+    if (!relayReady()) { out.textContent = 'Reports need the request relay. Set it up in Settings first.'; return; }
+    const names = { name: 'Name or word sounds wrong', pin: 'Pin in the wrong place', fact: 'Fact seems wrong', other: 'Other problem' };
+    const lines = ['Problem type: ' + names[k], 'Episode: ' + c.title + ' (id: ' + c.id + ')', 'Chapter ' + c.num + ': ' + c.chapter + c.at];
+    if (c.stop) lines.push('Stop selected on the map: ' + (c.stop.k + 1) + ', ' + c.stop.name + ' (pin now at ' + c.stop.lat + ', ' + c.stop.lon + ')');
+    lines.push('', 'What the listener said: ' + note);
+    $('rp-send').disabled = true; out.textContent = 'Sending\u2026';
+    try {
+      // An older relay would file this as an episode request, so check it knows about reports first.
+      const p = await relayPost({ ping: true });
+      if (p.ok && !(p.data && p.data.feedback)) { out.textContent = 'The relay needs a small update before it can take reports. Paste the new relay/worker.js into Cloudflare (steps are in relay/README.md).'; $('rp-send').disabled = false; return; }
+      const r = await relayPost({ kind: 'feedback', title: names[k] + ': ' + c.title + ', ' + c.chapter, text: lines.join('\n') });
+      if (r.ok) { $('dlg-report').close(); showToast('Report sent. Claude will fix it on the next pass.'); return; }
+      out.textContent = (r.data && r.data.error) || ('The relay answered ' + r.status + '. If it keeps failing, the relay may need updating (see the relay README).');
+    } catch (err) { out.textContent = 'Could not reach the relay. Check your connection and try again.'; }
+    $('rp-send').disabled = false;
+  }
   let justSent = null;
   function drawRequests(items, note) {
     const ul = $('cr-list'); ul.textContent = '';
@@ -2090,6 +2140,7 @@
       if (curBlobUrl) { URL.revokeObjectURL(curBlobUrl); curBlobUrl = null; }
     }
     $('ch-label').textContent = ch.label;
+    $('report-btn').hidden = !relayReady(); $('walk-report').hidden = !relayReady();
     following = true; hideFollowPill(); syncFollowUi();
     drawHero();
     updateScrub(true);
@@ -2530,6 +2581,10 @@
     $('arrive-go').addEventListener('click', arriveGo);
     $('arrive-x').addEventListener('click', () => { arrivePrompt = null; syncArrive(); });
     $('map-save').addEventListener('click', onSaveMap);
+    $('report-btn').addEventListener('click', () => openReport(false));
+    $('walk-report').addEventListener('click', () => openReport(true));
+    $('rp-send').addEventListener('click', sendReport);
+    document.getElementsByName('rp-kind').forEach((r) => r.addEventListener('change', syncReportHint));
     const setWait = (on) => {
       settings.waitStop = on; saveSettings(); $('walk-wait').checked = on; $('waitstop').checked = on;
       if (on && walkWatch == null && walkState() && view === 'player') { walkPref.setGps(true); startWalkGps(false); }

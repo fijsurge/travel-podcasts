@@ -148,6 +148,7 @@
       <button class="chip small" id="script-btn" aria-pressed="false" hidden><span id="script-label">Show script</span></button>
       <button class="chip small" id="queue-btn" aria-haspopup="dialog"><span id="queue-label">Up next</span></button>
       <button class="chip small" id="sleep-btn" aria-haspopup="dialog"><span id="sleep-label">Sleep</span></button>
+      <button class="chip small" id="report-btn" aria-haspopup="dialog" hidden><span>Report a problem</span></button>
     </div>
     <div class="ch-meta" id="ch-meta"></div>
     <div class="walk-slot" id="walk-slot-inline">
@@ -179,6 +180,7 @@
           </div>
           <a class="btn-sm ghost wide-link" id="map-whole" target="_blank" rel="noopener">Open the whole walk in Google Maps</a>
           <button class="btn-sm ghost wide-link" id="map-save" type="button">Save map for offline</button>
+          <button class="btn-sm ghost wide-link" id="walk-report" type="button">Report a problem with this stop</button>
           <p class="fine mf-fine">The dashed line is straight, not the street route. Stop positions are accurate to about 50 meters.</p>
         </section>
       </div>
@@ -305,6 +307,25 @@
     <h2 id="name-title">Name</h2>
     <input id="name-input" type="text" maxlength="60" autocomplete="off">
     <button class="primary wide" id="name-save" type="button">Save</button>
+    <button class="ghost wide" value="close">Cancel</button>
+  </form>
+</dialog>
+
+<!-- Report a problem -->
+<dialog id="dlg-report">
+  <form method="dialog" class="sheet" id="report-form">
+    <h2>Report a problem</h2>
+    <p class="fine" id="rp-where"></p>
+    <div class="rp-kinds" role="radiogroup" aria-label="What is wrong">
+      <label><input type="radio" name="rp-kind" value="name" checked> A name or word sounds wrong</label>
+      <label><input type="radio" name="rp-kind" value="pin"> The pin is in the wrong place</label>
+      <label><input type="radio" name="rp-kind" value="fact"> A fact seems wrong</label>
+      <label><input type="radio" name="rp-kind" value="other"> Something else</label>
+    </div>
+    <label class="fine" for="rp-note" id="rp-note-label">Which word, and how should it sound?</label>
+    <textarea id="rp-note" rows="3" maxlength="600" placeholder="For example: Scheldt sounds like Shelled, it is said Skelt"></textarea>
+    <p class="fine" id="rp-status" role="status"></p>
+    <button class="primary wide" id="rp-send" type="button">Send report</button>
     <button class="ghost wide" value="close">Cancel</button>
   </form>
 </dialog>

@@ -506,3 +506,9 @@ dialog.map-full[open] { display: flex; flex-direction: column; }
 .meter > i { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
 .meter.warn > i { background: #d99a1d; }
 .meter.high > i { background: #b3402a; }
+
+/* report a problem */
+.rp-kinds { display: grid; gap: 2px; margin: 4px 0 8px; }
+.rp-kinds label { display: flex; gap: 10px; align-items: center; min-height: 44px; }
+.rp-kinds input { width: 20px; height: 20px; flex: none; }
+#rp-note { width: 100%; font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: inherit; resize: vertical; }

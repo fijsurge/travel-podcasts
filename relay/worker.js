@@ -7,6 +7,7 @@
 const REPO = 'fijsurge/travel-podcasts';
 const SITE = 'https://fijsurge.github.io';
 const LABEL = 'episode-request';
+const FEEDBACK_LABEL = 'episode-feedback';
 const MAX_OPEN = 15;      // refuse new requests while this many are still waiting
 const MAX_TEXT = 6000;    // characters
 
@@ -54,20 +55,22 @@ export default {
 
     let data;
     try { data = await req.json(); } catch (e) { return reply({ ok: false, error: 'The request was not readable.' }, 400); }
-    if (data && data.ping) return reply({ ok: true, message: 'Connected.' }, 200);
+    if (data && data.ping) return reply({ ok: true, message: 'Connected.', feedback: true }, 200);
 
+    const feedback = !!(data && data.kind === 'feedback');
+    const label = feedback ? FEEDBACK_LABEL : LABEL;
     const text = String((data && data.text) || '').trim();
-    const title = String((data && data.title) || 'New episode').replace(/\s+/g, ' ').trim().slice(0, 120);
-    if (text.length < 20) return reply({ ok: false, error: 'The request is too short.' }, 400);
+    const title = String((data && data.title) || (feedback ? 'Problem report' : 'New episode')).replace(/\s+/g, ' ').trim().slice(0, 120);
+    if (text.length < (feedback ? 10 : 20)) return reply({ ok: false, error: 'The request is too short.' }, 400);
     if (text.length > MAX_TEXT) return reply({ ok: false, error: 'The request is too long.' }, 413);
 
-    const open = await gh(env, '/repos/' + REPO + '/issues?labels=' + LABEL + '&state=open&per_page=' + (MAX_OPEN + 1));
+    const open = await gh(env, '/repos/' + REPO + '/issues?labels=' + label + '&state=open&per_page=' + (MAX_OPEN + 1));
     if (!open.ok) return reply({ ok: false, error: 'GitHub did not accept the relay key (' + open.status + ').' }, 502);
-    if ((await open.json()).length >= MAX_OPEN) return reply({ ok: false, error: 'There are already ' + MAX_OPEN + ' requests waiting. Try again once some are done.' }, 429);
+    if ((await open.json()).length >= MAX_OPEN) return reply({ ok: false, error: 'There are already ' + MAX_OPEN + (feedback ? ' reports' : ' requests') + ' waiting. Try again once some are done.' }, 429);
 
     const made = await gh(env, '/repos/' + REPO + '/issues', {
       method: 'POST',
-      body: JSON.stringify({ title: 'Episode request: ' + title, body: text, labels: [LABEL] }),
+      body: JSON.stringify({ title: (feedback ? 'Problem report: ' : 'Episode request: ') + title, body: text, labels: [label] }),
     });
     if (!made.ok) return reply({ ok: false, error: 'GitHub refused the request (' + made.status + '). The key needs Issues: Read and write.' }, 502);
     const issue = await made.json();
