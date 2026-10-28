@@ -1296,17 +1296,29 @@
     const btn = $('cr-send'), out = $('cr-status');
     btn.disabled = true; out.textContent = 'Sending\u2026';
     try {
-      const r = await relayPost({ title: FORMATS[$('cr-kind').value].label + ': ' + place, text: buildRequest() });
-      if (r.ok) { out.textContent = 'Sent. Claude will pick it up, usually within a few hours.'; showToast('Request sent.'); loadRequests(); }
-      else out.textContent = (r.data && r.data.error) || ('The relay answered ' + r.status + '.');
-    } catch (err) { out.textContent = 'Could not reach the relay. Check your connection, then try again.'; }
+      const label = FORMATS[$('cr-kind').value].label + ': ' + place;
+      const r = await relayPost({ title: label, text: buildRequest() });
+      if (r.ok) {
+        out.className = 'cr-ok';
+        out.textContent = 'Sent: ' + label + '. Claude picks requests up five times a day. The form is clear, so you can ask for another.';
+        showToast('Request sent.');
+        $('create-form').reset(); $('cr-out').hidden = true; syncCreateForm();
+        justSent = { title: label, at: Date.now() };
+        loadRequests();
+        out.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        setTimeout(loadRequests, 3000);
+      } else { out.className = 'fine'; out.textContent = (r.data && r.data.error) || ('The relay answered ' + r.status + '.'); }
+    } catch (err) { out.className = 'fine'; out.textContent = 'Could not reach the relay. Check your connection, then try again.'; }
     btn.disabled = false;
   }
+  let justSent = null;
   async function loadRequests() {
     try {
       const res = await fetch(GH_API + '/repos/' + GH_REPO + '/issues?labels=episode-request&state=all&per_page=8');
       if (!res.ok) return;
       const items = (await res.json()).filter((x) => !x.pull_request);
+      // GitHub may take a moment to list a request just sent, so keep showing it for a few minutes
+      if (justSent && Date.now() - justSent.at < 300000 && !items.some((x) => x.title.replace(/^Episode request:\s*/i, '') === justSent.title)) items.unshift({ title: justSent.title, state: 'open' });
       const ul = $('cr-list'); ul.textContent = '';
       items.forEach((x) => {
         const li = mk('li', ''), t = mk('span', 'rq-t', x.title.replace(/^Episode request:\s*/i, ''));
@@ -2479,7 +2491,7 @@
     };
     $('walk-wait').addEventListener('change', (e) => setWait(e.target.checked));
     $('waitstop').addEventListener('change', (e) => setWait(e.target.checked));
-    $('cr-kind').addEventListener('change', syncCreateForm);
+    $('cr-kind').addEventListener('change', () => { syncCreateForm(); $('cr-status').className = 'fine'; $('cr-status').textContent = ''; });
     $('cr-send').addEventListener('click', sendRequest);
     $('relay-test').addEventListener('click', async () => {
       const out = $('relay-status');
