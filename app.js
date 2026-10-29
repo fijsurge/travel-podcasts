@@ -510,7 +510,26 @@
     const v = $('walk-view'), full = where === 'full';
     $(full ? 'walk-slot-full' : 'walk-slot-inline').append(v);
     v.classList.toggle('inline', !full); v.classList.toggle('full', full);
+    syncMapTouch();
     refitWalkMap();
+  }
+  // On a touch screen the small map inside the page lets one finger scroll the page and two fingers move or zoom the map.
+  // The full-screen map has no page to scroll, so one finger moves it there.
+  const touchScreen = () => !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  function syncMapTouch() {
+    if (!walkMap) return;
+    if (touchScreen() && $('walk-view').classList.contains('inline')) walkMap.dragging.disable(); else walkMap.dragging.enable();
+  }
+  let mapHintT = null;
+  function wireMapHint(box) {
+    const hint = $('map-hint'); if (!hint || box.dataset.hint) return;
+    box.dataset.hint = '1';
+    box.addEventListener('touchstart', (ev) => {
+      if (!touchScreen() || !$('walk-view').classList.contains('inline')) return;
+      if (ev.touches.length > 1) { hint.hidden = true; return; }
+      hint.hidden = false; clearTimeout(mapHintT); mapHintT = setTimeout(() => { hint.hidden = true; }, 1800);
+    }, { passive: true });
+    box.addEventListener('touchmove', (ev) => { if (ev.touches.length > 1) hint.hidden = true; }, { passive: true });
   }
   function refitWalkMap() {
     [60, 250].forEach((ms) => setTimeout(() => {
@@ -565,6 +584,7 @@
         return m;
       });
       walkMap.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [40, 56], paddingBottomRight: [40, 36], maxZoom: 17 });
+      syncMapTouch(); wireMapHint(box);
       refitWalkMap();
       selectStop(walkSel, false);
       if (walkWatch != null && walkGps) showYou(walkGps);

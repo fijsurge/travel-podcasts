@@ -556,3 +556,6 @@ dialog.map-full[open] { display: flex; flex-direction: column; }
 .iw { display: grid; gap: 2px; padding: 10px 0; border-top: 1px solid var(--line); }
 .iw-t { font: 400 1.05rem var(--serif); }
 .inworks .linkish { margin-top: 6px; }
+
+/* touch: one finger scrolls the page past the small map; a hint explains how to move it */
+.map-hint { position: absolute; left: 12px; right: 12px; top: 50%; transform: translateY(-50%); z-index: 500; padding: 10px 14px; border-radius: 12px; text-align: center; font-size: .92rem; font-weight: 600; background: rgba(8, 20, 27, .86); color: #eef3f5; pointer-events: none; }
