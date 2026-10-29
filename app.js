@@ -471,6 +471,19 @@
     return DIRS[Math.round((((Math.atan2(y, x) / rad) + 360) % 360) / 45) % 8];
   }
   const walkTime = (m) => Math.max(1, Math.round(m * WALK_MIN_PER_M)) + ' min';
+  const legDirUrl = (a, b) => 'https://www.google.com/maps/dir/?api=1&origin=' + a.lat + ',' + a.lon + '&destination=' + b.lat + ',' + b.lon + '&travelmode=walking';
+  // "Directions" starts from wherever you are now. Once the phone knows where that is, the button says how far.
+  function setDirLabel() {
+    const w = walkState(), btn = $('mf-dir'); if (!w || !btn) return;
+    const st = w.stops[walkSel];
+    btn.textContent = walkGps && st ? 'Directions \u00b7 ' + fmtDist(metres(walkGps.coords.latitude, walkGps.coords.longitude, st.lat, st.lon)) + ' away' : 'Directions';
+  }
+  function syncHowMore() {
+    const p = $('mf-how'), b = $('mf-how-more'); if (!p || !b) return;
+    const open = p.classList.contains('open');
+    b.hidden = !p.textContent || (!open && p.scrollHeight <= p.clientHeight + 1);
+    b.textContent = open ? 'Show less' : 'Read all';
+  }
   const dirUrl = (st) => 'https://www.google.com/maps/dir/?api=1&destination=' + st.lat + ',' + st.lon + '&travelmode=walking';
   function wholeWalkUrl(stops) {
     const f = stops[0], l = stops[stops.length - 1], mid = stops.slice(1, -1).map((x) => x.lat + ',' + x.lon).join('%7C');
@@ -548,8 +561,10 @@
     walkPins.forEach((m, i) => { const el = m.getElement(); if (el) el.classList.toggle('sel', i === k); });
     $('mf-name').textContent = (k + 1) + '. ' + st.name;
     $('mf-leg').textContent = legText(w.stops, k);
-    $('mf-how').textContent = st.hint;
-    $('mf-dir').href = dirUrl(st);
+    $('mf-how').textContent = st.hint; $('mf-how').classList.remove('open'); setTimeout(syncHowMore, 0);
+    $('mf-dir').href = dirUrl(st); setDirLabel();
+    const prev = w.stops[k - 1], legA = $('mf-leg-dir');
+    legA.hidden = !prev; if (prev) { legA.href = legDirUrl(prev, st); legA.textContent = 'Route from stop ' + k + ' to stop ' + (k + 1); }
     $('mf-play').onclick = () => { closeWalkMap(); gotoChapter(st.ch, true); };
     if (walkGps) showYou(walkGps, true);
     if (pan && walkMap && walkPins[k]) walkMap.panTo(walkPins[k].getLatLng());
@@ -650,6 +665,7 @@
       if (!walkYou) walkYou = { dot: L.circleMarker(ll, { radius: 8, color: '#fff', weight: 3, fillColor: '#2a6c8b', fillOpacity: 1 }).addTo(walkMap), ring: L.circle(ll, { radius: pos.coords.accuracy || 30, color: '#2a6c8b', weight: 1, fillOpacity: .12 }).addTo(walkMap) };
       else { walkYou.dot.setLatLng(ll); walkYou.ring.setLatLng(ll).setRadius(pos.coords.accuracy || 30); }
     }
+    setDirLabel();
     const st = w && w.stops[walkSel];
     if (st) {
       const m = metres(pos.coords.latitude, pos.coords.longitude, st.lat, st.lon);
@@ -2862,6 +2878,7 @@
     $('search-input').addEventListener('input', (e) => { clearTimeout(st); st = setTimeout(() => runSearch(e.target.value), 120); });
     $('arrive-go').addEventListener('click', arriveGo);
     $('walk-go').addEventListener('click', startWalk);
+    $('mf-how-more').addEventListener('click', () => { $('mf-how').classList.toggle('open'); syncHowMore(); });
     $('arrive-x').addEventListener('click', () => { arrivePrompt = null; syncArrive(); });
     $('map-save').addEventListener('click', onSaveMap);
     $('report-btn').addEventListener('click', () => openReport(false));

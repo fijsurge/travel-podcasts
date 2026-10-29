@@ -559,3 +559,7 @@ dialog.map-full[open] { display: flex; flex-direction: column; }
 
 /* touch: one finger scrolls the page past the small map; a hint explains how to move it */
 .map-hint { position: absolute; left: 12px; right: 12px; top: 50%; transform: translateY(-50%); z-index: 500; padding: 10px 14px; border-radius: 12px; text-align: center; font-size: .92rem; font-weight: 600; background: rgba(8, 20, 27, .86); color: #eef3f5; pointer-events: none; }
+
+/* directions text: tap to read all of it */
+.walk-view.inline .mf-how.open { display: block; -webkit-line-clamp: unset; overflow: visible; }
+.mf-more-btn { justify-self: start; min-height: 36px; padding: 0 2px; border: 0; background: transparent; color: var(--ink); font: inherit; font-size: .88rem; font-weight: 650; text-decoration: underline; cursor: pointer; }
