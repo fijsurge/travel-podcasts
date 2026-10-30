@@ -471,7 +471,11 @@
     return DIRS[Math.round((((Math.atan2(y, x) / rad) + 360) % 360) / 45) % 8];
   }
   const walkTime = (m) => Math.max(1, Math.round(m * WALK_MIN_PER_M)) + ' min';
-  const legDirUrl = (a, b) => 'https://www.google.com/maps/dir/?api=1&origin=' + a.lat + ',' + a.lon + '&destination=' + b.lat + ',' + b.lon + '&travelmode=walking';
+  // Google Maps gets the landmark's name and city, so it routes to the place itself (its entrance), not to a raw coordinate that may sit
+  // in the middle of a square or on the wrong side of a canal. The coordinates stay as the fallback when a stop has no name.
+  const cleanStopName = (label) => label.replace(/^(stop|chapter)\s*\d+\s*[:.\u2013-]\s*/i, '').split(/,| and /)[0].trim();
+  const mapPoint = (st) => (st.q ? encodeURIComponent(st.q) : st.lat + ',' + st.lon);
+  const legDirUrl = (a, b) => 'https://www.google.com/maps/dir/?api=1&origin=' + mapPoint(a) + '&destination=' + mapPoint(b) + '&travelmode=walking';
   // "Directions" starts from wherever you are now. Once the phone knows where that is, the button says how far.
   function setDirLabel() {
     const w = walkState(), btn = $('mf-dir'); if (!w || !btn) return;
@@ -484,10 +488,10 @@
     b.hidden = !p.textContent || (!open && p.scrollHeight <= p.clientHeight + 1);
     b.textContent = open ? 'Show less' : 'Read all';
   }
-  const dirUrl = (st) => 'https://www.google.com/maps/dir/?api=1&destination=' + st.lat + ',' + st.lon + '&travelmode=walking';
+  const dirUrl = (st) => 'https://www.google.com/maps/dir/?api=1&destination=' + mapPoint(st) + '&travelmode=walking';
   function wholeWalkUrl(stops) {
-    const f = stops[0], l = stops[stops.length - 1], mid = stops.slice(1, -1).map((x) => x.lat + ',' + x.lon).join('%7C');
-    return 'https://www.google.com/maps/dir/?api=1&origin=' + f.lat + ',' + f.lon + '&destination=' + l.lat + ',' + l.lon + (mid ? '&waypoints=' + mid : '') + '&travelmode=walking';
+    const f = stops[0], l = stops[stops.length - 1], mid = stops.slice(1, -1).map(mapPoint).join('%7C');
+    return 'https://www.google.com/maps/dir/?api=1&origin=' + mapPoint(f) + '&destination=' + mapPoint(l) + (mid ? '&waypoints=' + mid : '') + '&travelmode=walking';
   }
   function legText(stops, k) {
     if (k === 0) return 'First stop';
@@ -1053,6 +1057,7 @@
       lat: pt[0], lon: pt[1], ch: chs[k], k,
       name: e.chapters[chs[k]].label.replace(/^(stop|chapter)\s*\d+\s*[:.\u2013-]\s*/i, ''),
       hint: (e.hints && e.hints[k]) || '',
+      q: ((e.maps && e.maps[k]) || (e.place ? cleanStopName(e.chapters[chs[k]].label) + ', ' + e.place : '')).trim(),
     }));
   }
   function metres(a, b, c, d) {
@@ -1486,7 +1491,7 @@
     const kind = $('cr-kind').value, place = $('cr-place').value.trim();
     const spec = { overview: 'about 12 minutes of audio (roughly 1,800 words), 5 or 6 short chapters', walk: 'about 30 to 40 minutes of audio (roughly 4,500 to 6,000 words), one chapter per stop, with turn-by-turn directions and a short pause cue at each stop', deep: 'about an hour or more of audio (roughly 9,000 words or more), 8 to 10 chapters' }[kind];
     const lines = [
-      'Please write a new Travel Podcasts episode and add it to the travel-podcasts repo. Follow tools/STYLE.md and the format of the existing episodes (front matter with title, place, order, blurb, speakers, voices and format, then a Welcome and numbered Chapters, then Sources consulted). Two-host episodes use Anna and Ben with engine: chatterbox; walking tours also need stops: (latitude,longitude for each stop) and hints: (one line on how to find each stop).',
+      'Please write a new Travel Podcasts episode and add it to the travel-podcasts repo. Follow tools/STYLE.md and the format of the existing episodes (front matter with title, place, order, blurb, speakers, voices and format, then a Welcome and numbered Chapters, then Sources consulted). Two-host episodes use Anna and Ben with engine: chatterbox; walking tours also need stops: (latitude,longitude for each stop), hints: (one line on how to find each stop) and maps: (one Google Maps search per stop, the landmark name and city, separated by |).',
       '',
       `Format: ${FORMATS[kind].label} (format: ${kind}), ${spec}.`,
       `Place: ${place || '(not given)'}`,
