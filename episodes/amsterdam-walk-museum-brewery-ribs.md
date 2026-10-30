@@ -12,6 +12,7 @@ lat: 52.3620
 lon: 4.8900
 stops: 52.3600,4.8852; 52.3580,4.8800; 52.3560,4.8940; 52.3579,4.8917; 52.3633,4.8925
 maps: Rijksmuseum, Amsterdam | Museumplein, Amsterdam | Albert Cuypmarkt, Amsterdam | Heineken Experience, Amsterdam | Cafe de Klos, Kerkstraat 41, Amsterdam
+placeids: ChIJ5Ra7we4JxkcRhYVAaq5zQ9U | ChIJ8fHAr5oJxkcRYbV0gKUKxfk | ChIJZapZuvIJxkcRmAvJTwrtnNE | ChIJSxklPO0JxkcRCqxBkavK008 | ChIJj1L0u-kJxkcRjqjnVEm7B6o
 hints: Museumplein side of the building, Museumstraat. Your reserved 1 PM ticket is for the main entrance under the arch in the center of the building. | Walk out of the museum garden side onto the big open lawn behind the museum. The Van Gogh Museum is the modern building on the far side, the Concertgebouw is the red brick hall at the top of the square. | From Museumplein go east along the canal side, then into the Albert Cuypstraat, the long market street in De Pijp. | Walk back toward the canal, the Stadhouderskade. The brewery is the big old brick building at number 78, with a red star on the front. Your rooftop tour is at 4:45 PM. | Walk north toward the center, aiming for Kerkstraat, a street between the canals. The cafe is at number 41, a small bar with a pink and gold front. No reservations, so go early. Positions are approximate, so check the address on a map.
 ---
 

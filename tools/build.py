@@ -13,6 +13,7 @@ Episode format (see README.md):
   stops: lat,lon; lat,lon             (optional, one per Stop/Chapter section: shows the walking map)
   hints: how to reach stop 1 | stop 2 | ...   (optional, one short line per stop)
   maps: Het Steen, Antwerp | Grote Markt, Antwerp | ...   (optional, one Google Maps search per stop: the landmark's name and city, so Directions go to the place itself)
+  placeids: Google Place ID per stop, | separated (optional; Maps then shows the place by name)
   engine: chatterbox                  (optional voice engine: kokoro (default) or chatterbox)
   ---
   ## Notes before you listen ...      (skipped when listening)
@@ -183,6 +184,7 @@ def parse_episode(raw: str, slug: str):
         "stops": _stops(meta.get("stops", "")),
         "hints": [h.strip() for h in meta.get("hints", "").split("|") if h.strip()],
         "maps": [h.strip() for h in meta.get("maps", "").split("|") if h.strip()],
+        "placeIds": [h.strip() for h in meta.get("placeids", "").split("|")] if meta.get("placeids", "").strip() else [],
         "order": float(meta.get("order", 999)),
         "words": words,
         "minutes": max(1, round(words / WPM)),

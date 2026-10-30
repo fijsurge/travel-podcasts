@@ -475,7 +475,9 @@
   // in the middle of a square or on the wrong side of a canal. The coordinates stay as the fallback when a stop has no name.
   const cleanStopName = (label) => label.replace(/^(stop|chapter)\s*\d+\s*[:.\u2013-]\s*/i, '').split(/,| and /)[0].trim();
   const mapPoint = (st) => (st.q ? encodeURIComponent(st.q) : st.lat + ',' + st.lon);
-  const legDirUrl = (a, b) => 'https://www.google.com/maps/dir/?api=1&origin=' + mapPoint(a) + '&destination=' + mapPoint(b) + '&travelmode=walking';
+  // A Google Place ID tells Maps exactly which place is meant, so it shows the place by name in the route (the text search is only the fallback).
+  const pidPart = (key, st) => (st.pid ? '&' + key + '=' + encodeURIComponent(st.pid) : '');
+  const legDirUrl = (a, b) => 'https://www.google.com/maps/dir/?api=1&origin=' + mapPoint(a) + pidPart('origin_place_id', a) + '&destination=' + mapPoint(b) + pidPart('destination_place_id', b) + '&travelmode=walking';
   // "Directions" starts from wherever you are now. Once the phone knows where that is, the button says how far.
   function setDirLabel() {
     const w = walkState(), btn = $('mf-dir'); if (!w || !btn) return;
@@ -488,10 +490,11 @@
     b.hidden = !p.textContent || (!open && p.scrollHeight <= p.clientHeight + 1);
     b.textContent = open ? 'Show less' : 'Read all';
   }
-  const dirUrl = (st) => 'https://www.google.com/maps/dir/?api=1&destination=' + mapPoint(st) + '&travelmode=walking';
+  const dirUrl = (st) => 'https://www.google.com/maps/dir/?api=1&destination=' + mapPoint(st) + pidPart('destination_place_id', st) + '&travelmode=walking';
   function wholeWalkUrl(stops) {
     const f = stops[0], l = stops[stops.length - 1], mid = stops.slice(1, -1).map(mapPoint).join('%7C');
-    return 'https://www.google.com/maps/dir/?api=1&origin=' + mapPoint(f) + '&destination=' + mapPoint(l) + (mid ? '&waypoints=' + mid : '') + '&travelmode=walking';
+    const inner = stops.slice(1, -1), wp = inner.length && inner.every((x) => x.pid) ? '&waypoint_place_ids=' + inner.map((x) => encodeURIComponent(x.pid)).join('%7C') : '';
+    return 'https://www.google.com/maps/dir/?api=1&origin=' + mapPoint(f) + pidPart('origin_place_id', f) + '&destination=' + mapPoint(l) + pidPart('destination_place_id', l) + (mid ? '&waypoints=' + mid + wp : '') + '&travelmode=walking';
   }
   function legText(stops, k) {
     if (k === 0) return 'First stop';
@@ -1057,6 +1060,7 @@
       lat: pt[0], lon: pt[1], ch: chs[k], k,
       name: e.chapters[chs[k]].label.replace(/^(stop|chapter)\s*\d+\s*[:.\u2013-]\s*/i, ''),
       hint: (e.hints && e.hints[k]) || '',
+      pid: ((e.placeIds && e.placeIds[k]) || '').trim(),
       q: ((e.maps && e.maps[k]) || (e.place ? cleanStopName(e.chapters[chs[k]].label) + ', ' + e.place : '')).trim(),
     }));
   }

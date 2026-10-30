@@ -13,6 +13,7 @@ lon: 4.3977
 hints: From the river dock, walk along the waterfront to the small stone fortress at the Steenplein. The giant statue stands by the entrance bridge. | Leave the Steen by the street that runs straight inland, the Suikerrui. It opens into the Grote Markt after a few minutes, with the town hall on your left as you enter. | From the Grote Markt, keep the cathedral tower in front of you. It rises over the rooftops, and the short streets lead straight to the church and the Handschoenmarkt. | Leave the cathedral square to the south and a little west, through the lanes toward the Vrijdagmarkt. Signs for the Plantin-Moretus Museum help. | The museum is on the Vrijdagmarkt itself. For the last stop, head east on foot toward the Meir shopping street. The Rubens House is just off it, on the Wapper.
 stops: 51.2227,4.3977; 51.2211,4.3997; 51.2203,4.4009; 51.2204,4.3995; 51.2183,4.3978; 51.2172,4.4092
 maps: Het Steen, Antwerp | Grote Markt, Antwerp | Cathedral of Our Lady, Antwerp | Handschoenmarkt, Antwerp | Plantin-Moretus Museum, Antwerp | Rubenshuis, Antwerp
+placeids: ChIJO-nq3fX2w0cRBavEBrxq_f8 | ChIJ-4elR_b2w0cR3I_BDjI7br8 | ChIJhYw-Aff2w0cRSugPT1RpxyQ | ChIJA2wVXfb2w0cRGBCsohAZfkc | ChIJ2emgo_b2w0cRzhifmgKcPt4 | ChIJC-2isfv2w0cR8aYEwRScq4s
 ---
 
 ## Notes before you listen (skip this part when listening)

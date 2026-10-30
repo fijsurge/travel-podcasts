@@ -12,6 +12,7 @@ lat: 52.3735
 lon: 4.8960
 stops: 52.3764,4.9022; 52.3727,4.9003; 52.3714,4.9014; 52.3744,4.8980; 52.3694,4.8898; 52.3743,4.8863
 maps: Schreierstoren, Amsterdam | De Waag, Nieuwmarkt, Amsterdam | Zuiderkerk, Amsterdam | Oude Kerk, Amsterdam | Begijnhof, Amsterdam | Huis met de Hoofden, Keizersgracht 123, Amsterdam
+placeids: ChIJ8-nz-rkJxkcR25uPlJXZKG4 | ChIJVR5Sl74JxkcRPvBLwwIgPmA | ChIJ6anj6r4JxkcRxQixIaK9T2A | ChIJL33h87gJxkcRIu1FY7IyWV4 | ChIJeSe5CsEJxkcRdRlM21_MA9s | ChIJ8fk2lsUJxkcRoUg7X_T5ZVI
 hints: Prins Hendrikkade, on the harbor side, a few minutes on foot from Central Station. A squat round brick tower with a cafe at its foot, standing at a corner of the water. | Walk inland and a little south, away from the harbor, to the big open square with the castle-like brick building in the middle. That is the Waag. | The tall tower with the lead-covered spire rises just south-east of the square. Walk toward it and you will be at the church. | Head back west toward the old center, through the lanes toward the canal-side streets. The Old Church tower stands in the middle of a small square, ringed by buildings. Keep your map open here. | From the Old Church go south through the center toward the Spui square. A narrow passage off the pedestrian street, the Kalverstraat, leads into the courtyard. Mind the opening hours and keep your voice down. | From the Spui go north-west along the Singel canal and across to the Keizersgracht. The house stands on the canal at number 123, with six stone heads along the facade.
 ---
 
