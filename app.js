@@ -1252,22 +1252,39 @@
     box.append(sec);
   }
 
-  /* ---------- Home: what has been asked for and is not finished yet ---------- */
+  /* ---------- Home: what has been asked for and is not finished yet, start to finish ---------- */
   let reqTried = 0;
   function renderOnItsWay(box) {
     if (!relayReady() && !outbox().length) return;
     const cache = store.get('tp.requests', null);
     if (relayReady() && online() && Date.now() - reqTried > 120000 && (!cache || Date.now() - cache.at > 120000)) { reqTried = Date.now(); loadRequests(); }
+    const items = (cache && cache.items) || [];
     const queued = outbox().map((x) => ({ title: x.title, state: 'queued' }));
-    const open = ((cache && cache.items) || []).filter((x) => x.state === 'open' && !queued.some((q) => q.title === x.title.replace(/^Episode request:\s*/i, '')));
-    const all = queued.concat(open);
+    const open = items.filter((x) => x.state === 'open' && !queued.some((q) => q.title === x.title.replace(/^Episode request:\s*/i, '')));
+    // Claude has written these (their issue is closed), but the audio is not all made yet: stay in this list,
+    // with the same per-chapter progress the library card and the audio banner use, until every part is ready.
+    const making = [];
+    items.filter((x) => x.state === 'closed').forEach((x) => {
+      const found = requestEpisode(x.title);
+      if (found && audioCount(found) < found.chapters.length) making.push({ title: x.title, ep: found });
+    });
+    const all = queued.concat(open).concat(making);
     if (!all.length) return;
     const sec = mk('section', 'shelf inworks', '');
-    sec.append(mk('h2', '', 'On its way'));
+    sec.append(mk('h2', '', 'In progress'));
     all.forEach((x) => {
-      const row = mk('div', 'iw', '');
+      const row = mk(x.ep ? 'button' : 'div', 'iw' + (x.ep ? ' iw-link' : ''), '');
+      if (x.ep) row.type = 'button';
       row.append(mk('span', 'iw-t', x.title.replace(/^Episode request:\s*/i, '')));
-      const eta = mk('span', 'rq-eta', etaText(x.state)); eta.dataset.eta = x.state; row.append(eta);
+      if (x.ep) {
+        const sm = episodeAudioSummary(x.ep);
+        const line = mk('span', 'rq-eta pill ' + sm.kind, '');
+        line.append(mk('span', 'dot', ''), document.createTextNode(' ' + sm.text));
+        row.append(line);
+        row.addEventListener('click', () => { location.hash = '#/e/' + encodeURIComponent(x.ep.id); });
+      } else {
+        const eta = mk('span', 'rq-eta', etaText(x.state)); eta.dataset.eta = x.state; row.append(eta);
+      }
       sec.append(row);
     });
     const more = mk('button', 'linkish', 'See all requests'); more.type = 'button';
@@ -1679,6 +1696,9 @@
     const place = fold(m[2]);
     const hits = library.filter((e) => !e.user && fmtOf(e) === fmt && fold(e.place || '') === place);
     if (!hits.length) return null;
+    // Two distinct episodes can share a format and place (an overview and a separate "dark history" overview,
+    // say): only resolve automatically when the matches are really the same episode told another way.
+    if (new Set(hits.map(famKey)).size > 1) return null;
     return hits.sort((x, y) => (isNew(y) - isNew(x)) || (y.order - x.order))[0];
   }
   function drawRequests(items, note) {
