@@ -1,0 +1,58 @@
+# One-off: compares the current voices with a more expressive open-source voice model (Chatterbox Turbo).
+# Run it by hand from the Actions tab. Results land in samples/ and are served by the site.
+name: Voice test
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: voicetest
+  cancel-in-progress: false
+env:
+  KOKORO_MODEL: models/kokoro-v1.0.int8.onnx
+  KOKORO_VOICES: models/voices-v1.0.bin
+  MODEL_URL: https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/cache@v4
+        id: model
+        with:
+          path: models
+          key: kokoro-v1.0-int8
+      - name: Download Kokoro model (first run only)
+        if: steps.model.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p models
+          curl -fL --retry 4 -o models/kokoro-v1.0.int8.onnx "$MODEL_URL/kokoro-v1.0.int8.onnx"
+          curl -fL --retry 4 -o models/voices-v1.0.bin "$MODEL_URL/voices-v1.0.bin"
+      - name: ffmpeg
+        run: |
+          command -v ffmpeg >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg; }
+      - name: Current voices (Kokoro), and the reference clips
+        run: |
+          python -m venv kvenv
+          kvenv/bin/pip install -q kokoro-onnx==0.6.1 soundfile numpy
+          kvenv/bin/python tools/voicetest.py kokoro
+      - name: Expressive voices (Chatterbox Turbo, on the CPU)
+        run: |
+          python -m venv cvenv
+          cvenv/bin/pip install -q chatterbox-tts soundfile
+          cvenv/bin/python tools/voicetest.py chatter
+      - name: Publish the samples
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add samples
+          git commit -m "Voice test samples" || exit 0
+          for i in 1 2 3 4; do
+            git push origin HEAD:main && exit 0
+            git fetch origin main && git rebase origin/main
+          done
+          exit 1

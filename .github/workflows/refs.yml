@@ -1,0 +1,43 @@
+# One-off: makes the reference voice clips (refs/anna.wav, refs/ben.wav) that the Chatterbox engine clones.
+# Run it by hand from the Actions tab; it commits the clips to refs/.
+name: Make reference voices
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+env:
+  KOKORO_MODEL: models/kokoro-v1.0.int8.onnx
+  KOKORO_VOICES: models/voices-v1.0.bin
+  MODEL_URL: https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0
+jobs:
+  refs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v4
+        id: model
+        with:
+          path: models
+          key: kokoro-v1.0-int8
+      - name: Download Kokoro model (first run only)
+        if: steps.model.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p models
+          curl -fL --retry 4 -o models/kokoro-v1.0.int8.onnx "$MODEL_URL/kokoro-v1.0.int8.onnx"
+          curl -fL --retry 4 -o models/voices-v1.0.bin "$MODEL_URL/voices-v1.0.bin"
+      - run: pip install kokoro-onnx==0.6.1 soundfile numpy
+      - run: python tools/make_audio.py refs
+      - name: Commit the clips
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add refs
+          git commit -m "Reference voice clips for Chatterbox" || exit 0
+          for i in 1 2 3 4; do
+            git push origin HEAD:main && exit 0
+            git fetch origin main && git rebase origin/main
+          done
+          exit 1

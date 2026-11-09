@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Travel Podcasts</title>
+<meta name="description" content="Narrated history episodes, read aloud by your phone's own voices.">
+<meta name="theme-color" content="#e8edef" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0a161d" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="preload" href="fonts/young-serif-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/atkinson-hyperlegible-next-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top" id="top">
+  <button class="icon-btn" id="back" aria-label="Back to library" hidden>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+  </button>
+  <h1 id="title">Travel Podcasts</h1>
+  <button class="icon-btn" id="settings-btn" aria-label="Settings">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3h0a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5h0a1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9v0a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
+  </button>
+</header>
+
+<div class="offline-bar" id="offline-bar" role="status" hidden>You are offline. Saved episodes and maps still work, and requests wait until you are back online.</div>
+<div class="update-bar" id="update-bar" role="status" hidden>
+  <span>A new version is ready.</span>
+  <button class="btn-sm" id="update-now" type="button">Update now</button>
+</div>
+
+<main id="main">
+  <div id="as-wrap">
+    <div class="audio-status" id="audio-status" hidden>
+      <div class="as-top"><span class="dot"></span><div class="as-text"><strong id="as-title"></strong><span id="as-sub"></span></div>
+        <button class="ghost small" id="as-details" type="button">Details</button></div>
+      <div class="as-bar" id="as-bar"><div id="as-fill"></div></div>
+    </div>
+  </div>
+
+  <!-- Home -->
+  <section id="view-home" class="view">
+    <div class="chips" id="home-places" hidden></div>
+    <div id="home-shelves"></div>
+  </section>
+
+  <!-- Search -->
+  <section id="view-search" class="view" hidden>
+    <label class="search-box"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+      <input id="search-input" type="search" placeholder="Search every chapter" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
+    </label>
+    <div id="search-results" class="results"></div>
+  </section>
+
+  <!-- Create -->
+  <section id="view-create" class="view" hidden>
+    <h2 class="view-h">Ask for a new episode</h2>
+    <p class="lede">Fill in what you know. Claude writes the script, and the audio then appears in your library. Allow a few hours for the script and about 40 minutes for the audio.</p>
+    <form id="create-form" class="stack" autocomplete="off">
+      <label class="field">What kind of episode?
+        <select id="cr-kind">
+          <option value="overview">Overview (10 to 15 min)</option>
+          <option value="walk">Walking tour (30 to 45 min)</option>
+          <option value="deep">Deep dive (an hour or more)</option>
+        </select>
+      </label>
+      <label class="field">Place
+        <input id="cr-place" type="text" placeholder="Bruges">
+      </label>
+      <label class="field" id="cr-stops-wrap">Stops, in order (one per line)
+        <textarea id="cr-stops" rows="5" placeholder="Markt square&#10;Belfry&#10;Burg square"></textarea>
+      </label>
+      <label class="field"><span id="cr-time-label">How long will you be out walking?</span>
+        <input id="cr-time" type="text" placeholder="About 2 hours, with a coffee stop">
+      </label>
+      <label class="field">What you care about
+        <input id="cr-interests" type="text" placeholder="History, architecture, a good coffee stop">
+      </label>
+      <label class="field">Style
+        <select id="cr-style">
+          <option value="two hosts, lively and conversational">Two hosts, lively</option>
+          <option value="one narrator">One narrator</option>
+        </select>
+      </label>
+      <label class="field">Anything practical
+        <textarea id="cr-notes" rows="3" placeholder="Hills, weather plan, listening on a shared speaker"></textarea>
+      </label>
+      <button class="primary wide" id="cr-send" type="button" hidden>Send to Claude</button>
+      <button class="primary wide" id="cr-copy" type="button">Copy request for Claude</button>
+    </form>
+    <p class="fine" id="cr-status" role="status"></p>
+    <textarea id="cr-out" rows="9" readonly hidden aria-label="Your request"></textarea>
+    <p class="fine" id="cr-hint">Paste it into your chat with Claude. To send requests straight from the app, set up the relay in Settings (see relay/README.md in the repository).</p>
+    <div id="cr-recent" hidden>
+      <h3 class="sec">Your recent requests</h3>
+      <p class="fine" id="cr-list-note" role="status"></p>
+      <ul class="req-list" id="cr-list"></ul>
+      <button class="ghost small" id="cr-refresh" type="button">Check again</button>
+    </div>
+  </section>
+
+  <!-- Library -->
+  <section id="view-library" class="view">
+    <button class="ghost small" id="queue-open" type="button" hidden></button>
+    <div class="tabs" id="tabs" role="group" aria-label="Library">
+      <button type="button" data-tab="episodes">Episodes</button>
+      <button type="button" data-tab="playlists">Playlists</button>
+    </div>
+    <div id="pane-episodes">
+      <div class="chips" id="place-chips" hidden></div>
+      <ul class="cards" id="cards"></ul>
+      <button class="ghost wide" id="add-btn">＋ Add an episode</button>
+      <button class="linkish" id="show-hidden" hidden></button>
+    </div>
+    <div id="pane-playlists" hidden>
+      <ul class="cards" id="pl-cards"></ul>
+      <button class="ghost wide" id="pl-new">＋ New playlist</button>
+    </div>
+    <p class="fine" id="support-note" hidden></p>
+  </section>
+
+  <!-- Playlist -->
+  <section id="view-playlist" class="view" hidden>
+    <button class="primary wide" id="pl-play">Play all</button>
+    <button class="primary wide" id="pl-dl" hidden>Download for the trip</button>
+    <p class="fine" id="pl-dl-note" hidden></p>
+    <ul class="rows" id="pl-items"></ul>
+    <div class="row-actions">
+      <button class="ghost small" id="pl-rename" type="button">Rename</button>
+      <button class="ghost small danger" id="pl-delete" type="button">Delete playlist</button>
+    </div>
+  </section>
+
+  <!-- Player -->
+  <section id="view-player" class="view" hidden>
+    <div class="hero">
+      <div class="hero-cover" id="hero-cover"></div>
+      <div class="hero-text">
+        <h2 id="hero-title"></h2>
+        <p id="hero-sub"></p>
+      </div>
+    </div>
+    <div class="ch-head">
+      <button class="chip" id="chapters-btn" aria-haspopup="dialog">
+        <span id="ch-label">Chapter</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <button class="chip small" id="ver-btn" aria-haspopup="dialog" hidden><span id="ver-label">Version</span></button>
+      <button class="chip small" id="follow-btn" aria-pressed="false" hidden><span id="follow-label">Follow audio: off</span></button>
+      <button class="chip small" id="script-btn" aria-pressed="false" hidden><span id="script-label">Show script</span></button>
+      <button class="chip small" id="queue-btn" aria-haspopup="dialog"><span id="queue-label">Up next</span></button>
+      <button class="chip small" id="sleep-btn" aria-haspopup="dialog"><span id="sleep-label">Sleep</span></button>
+      <button class="chip small" id="report-btn" aria-haspopup="dialog" hidden><span>Report a problem</span></button>
+    </div>
+    <div class="ch-meta" id="ch-meta"></div>
+    <div class="walk-slot" id="walk-slot-inline">
+      <div class="walk-view inline" id="walk-view" hidden>
+        <div class="mf-arrive" id="walk-arrive" role="status" hidden>
+          <div class="mf-arrive-text" id="arrive-text"></div>
+          <div class="mf-arrive-acts">
+            <button class="btn-sm" id="arrive-go" type="button"></button>
+            <button class="btn-sm ghost" id="arrive-x" type="button">Not now</button>
+          </div>
+        </div>
+        <div class="mf-start" id="walk-start" hidden>
+          <button class="primary wide" id="walk-go" type="button">Start the walk</button>
+          <p class="fine">Turns on your location, keeps the screen awake, and pauses at each stop until you get there.</p>
+        </div>
+        <div class="mf-mapwrap">
+          <div id="walk-map" class="walk-map" role="application" aria-label="Map of the walking tour"></div>
+          <div class="map-hint" id="map-hint" role="status" hidden>Two fingers move the map. Tap Full screen to use one.</div>
+          <div class="mf-fabs">
+            <button class="map-fab" id="map-gps" type="button" aria-pressed="false">Show where I am</button>
+            <button class="map-fab" id="map-expand" type="button">Full screen</button>
+          </div>
+        </div>
+        <section class="mf-panel" aria-live="polite">
+          <div class="mf-chips" id="walk-chips" role="group" aria-label="Stops"></div>
+          <div class="mf-name" id="mf-name"></div>
+          <p class="mf-leg" id="mf-leg"></p>
+          <p class="mf-how" id="mf-how"></p>
+          <button class="mf-more-btn" id="mf-how-more" type="button" hidden>Read all</button>
+          <p class="mf-gps" id="map-gps-note"></p>
+          <div class="mf-acts">
+            <a class="btn-sm" id="mf-dir" target="_blank" rel="noopener">Directions</a>
+            <button class="btn-sm ghost" id="mf-play" type="button">Play this stop</button>
+          </div>
+          <details class="mf-more" id="mf-more">
+            <summary>More options</summary>
+          <a class="btn-sm ghost wide-link" id="mf-leg-dir" target="_blank" rel="noopener" hidden>Route from the previous stop</a>
+          <label class="mf-wait"><input type="checkbox" id="walk-wait"> Pause at each stop until I arrive</label>
+          <a class="btn-sm ghost wide-link" id="map-whole" target="_blank" rel="noopener">Open the whole walk in Google Maps</a>
+          <button class="btn-sm ghost wide-link" id="map-save" type="button">Save map for offline</button>
+          <button class="btn-sm ghost wide-link" id="walk-report" type="button">Report a problem with this stop</button>
+          <p class="fine mf-fine">The dashed line is straight, not the street route. Stop positions are accurate to about 50 meters.</p>
+          </details>
+        </section>
+      </div>
+    </div>
+    <div class="bar" hidden><div class="bar-fill" id="bar-fill"></div></div>
+    <article id="reader" class="reader" aria-live="off"></article>
+    <button class="follow-pill" id="follow-pill" type="button" hidden>Back to what's playing</button>
+    <aside id="sources" class="sources" hidden></aside>
+  </section>
+</main>
+
+<!-- Mini player (shown while browsing, if something is loaded) -->
+<div class="mini" id="mini" hidden>
+  <button class="mini-open" id="mini-open" type="button" aria-label="Open the player">
+    <span class="mini-title" id="mini-title"></span>
+    <span class="mini-sub" id="mini-sub"></span>
+  </button>
+  <button class="t-btn" id="mini-play" aria-label="Play">
+    <svg id="mini-ico-play" viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></svg>
+    <svg id="mini-ico-pause" viewBox="0 0 24 24" hidden><path d="M8 5v14M16 5v14"/></svg>
+  </button>
+  <button class="t-btn" id="mini-next" aria-label="Next chapter">
+    <svg viewBox="0 0 24 24"><path d="M18 5v14M6 5l9 7-9 7z"/></svg>
+  </button>
+  <div class="mini-bar"><div id="mini-fill"></div></div>
+</div>
+
+<!-- Transport (player only) -->
+<footer class="transport" id="transport" hidden>
+  <div class="row scrub" id="scrub">
+    <span id="t-cur">0:00</span>
+    <input id="scrubber" type="range" min="0" max="1000" value="0" aria-label="Position in this chapter">
+    <span id="t-left">0:00</span>
+  </div>
+  <div class="row speeds" id="speeds" role="group" aria-label="Speed"></div>
+  <div class="row buttons">
+    <button class="t-btn" id="prev-ch" aria-label="Previous chapter">
+      <svg viewBox="0 0 24 24"><path d="M6 5v14M18 5l-9 7 9 7z"/></svg>
+    </button>
+    <button class="t-btn" id="back-s" aria-label="Back three sentences">
+      <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 109-9M3 4v5h5"/></svg><small>3</small>
+    </button>
+    <button class="t-btn play" id="play" aria-label="Play">
+      <svg id="ico-play" viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></svg>
+      <svg id="ico-pause" viewBox="0 0 24 24" hidden><path d="M8 5v14M16 5v14"/></svg>
+    </button>
+    <button class="t-btn" id="fwd-s" aria-label="Forward three sentences">
+      <svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-9-9M21 4v5h-5"/></svg><small>3</small>
+    </button>
+    <button class="t-btn" id="next-ch" aria-label="Next chapter">
+      <svg viewBox="0 0 24 24"><path d="M18 5v14M6 5l9 7-9 7z"/></svg>
+    </button>
+  </div>
+</footer>
+
+<!-- Tab bar -->
+<nav class="tabbar" id="tabbar" aria-label="Main">
+  <a href="#/" data-tab="home"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/></svg></span><span>Home</span></a>
+  <a href="#/search" data-tab="search"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg></span><span>Search</span></a>
+  <a href="#/library" data-tab="library"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4v16M10 4v16M15 5l4 15"/></svg></span><span>Library</span></a>
+  <a href="#/create" data-tab="create"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span><span>Create</span></a>
+</nav>
+
+<!-- Walking map: full screen. The map and stop details move in here from the player page. -->
+<dialog id="dlg-map" class="map-full">
+  <div class="mf-bar">
+    <button class="icon-btn" id="map-close" type="button" aria-label="Back to the player"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg></button>
+    <h2 id="map-title">Walking map</h2>
+  </div>
+  <div class="mf-slot" id="walk-slot-full"></div>
+</dialog>
+
+<!-- Up next -->
+<dialog id="dlg-queue">
+  <form method="dialog" class="sheet">
+    <h2>Up next</h2>
+    <ul class="rows" id="queue-list"></ul>
+    <button class="ghost wide danger" id="queue-clear" type="button" hidden>Clear the queue</button>
+    <button class="primary wide" value="close">Close</button>
+  </form>
+</dialog>
+
+<!-- Sleep timer -->
+<dialog id="dlg-sleep">
+  <form method="dialog" class="sheet">
+    <h2>Sleep timer</h2>
+    <div id="sleep-opts"></div>
+    <button class="primary wide" value="close">Close</button>
+  </form>
+</dialog>
+
+<!-- Versions -->
+<dialog id="dlg-ver">
+  <form method="dialog" class="sheet">
+    <h2>Choose a version</h2>
+    <div id="ver-opts"></div>
+    <p class="fine">Switching keeps you on the same chapter.</p>
+    <button class="primary wide" value="close">Close</button>
+  </form>
+</dialog>
+
+<!-- Episode options -->
+<dialog id="dlg-ep">
+  <form method="dialog" class="sheet">
+    <h2 id="ep-opts-title"></h2>
+    <div id="ep-opts"></div>
+    <button class="primary wide" value="close">Close</button>
+  </form>
+</dialog>
+
+<!-- Add to playlist -->
+<dialog id="dlg-pl">
+  <form method="dialog" class="sheet">
+    <h2>Add to a playlist</h2>
+    <div id="pl-pick"></div>
+    <button class="ghost wide" id="pl-pick-new" type="button">＋ New playlist</button>
+    <button class="primary wide" value="close">Done</button>
+  </form>
+</dialog>
+
+<!-- Name -->
+<dialog id="dlg-name">
+  <form method="dialog" class="sheet">
+    <h2 id="name-title">Name</h2>
+    <input id="name-input" type="text" maxlength="60" autocomplete="off">
+    <button class="primary wide" id="name-save" type="button">Save</button>
+    <button class="ghost wide" value="close">Cancel</button>
+  </form>
+</dialog>
+
+<!-- Report a problem -->
+<dialog id="dlg-report">
+  <form method="dialog" class="sheet" id="report-form">
+    <h2>Report a problem</h2>
+    <p class="fine" id="rp-where"></p>
+    <div class="rp-kinds" role="radiogroup" aria-label="What is wrong">
+      <label><input type="radio" name="rp-kind" value="name" checked> A name or word sounds wrong</label>
+      <label><input type="radio" name="rp-kind" value="pin"> The pin is in the wrong place</label>
+      <label><input type="radio" name="rp-kind" value="fact"> A fact seems wrong</label>
+      <label><input type="radio" name="rp-kind" value="other"> Something else</label>
+    </div>
+    <label class="fine" for="rp-note" id="rp-note-label">Which word, and how should it sound?</label>
+    <textarea id="rp-note" rows="3" maxlength="600" placeholder="For example: Scheldt sounds like Shelled, it is said Skelt"></textarea>
+    <p class="fine" id="rp-status" role="status"></p>
+    <button class="primary wide" id="rp-send" type="button">Send report</button>
+    <button class="ghost wide" value="close">Cancel</button>
+  </form>
+</dialog>
+
+<!-- Chapter list -->
+<dialog id="dlg-chapters">
+  <form method="dialog" class="sheet">
+    <h2>Chapters</h2>
+    <ol id="ch-list" class="ch-list"></ol>
+    <button class="ghost wide" value="close">Close</button>
+  </form>
+</dialog>
+
+<!-- Audio progress details -->
+<dialog id="dlg-audio">
+  <form method="dialog" class="sheet">
+    <h2>Audio progress</h2>
+    <div id="as-list"></div>
+    <p class="fine" id="as-updated"></p>
+    <h3 class="sec">Storage</h3>
+    <div id="as-storage"></div>
+    <p class="fine"><span class="legend ready"></span>ready <span class="legend making"></span>being made now <span class="legend waiting"></span>waiting in line <span class="legend failed"></span>problem</p>
+    <button class="primary wide" value="close">Close</button>
+  </form>
+</dialog>
+
+<!-- Settings -->
+<dialog id="dlg-settings">
+  <form method="dialog" class="sheet">
+    <h2>Settings</h2>
+    <p class="fine">Saved on this phone only. These settings change how this phone plays, never the audio files and never other devices.</p>
+    <h3 class="sec first">Playback</h3>
+    <label class="field">Voice source
+      <select id="engine">
+        <option value="natural">Natural voices only (recommended)</option>
+        <option value="auto">Natural voices, else my phone's voice</option>
+        <option value="phone">Always use my phone's voice</option>
+      </select>
+    </label>
+    <label class="field check"><input type="checkbox" id="wake"> Keep the screen on while playing</label>
+    <label class="field check"><input type="checkbox" id="autonext"> Continue into the next chapter</label>
+    <label class="field check"><input type="checkbox" id="follow"> Scroll the script along with the audio</label>
+    <label class="field check"><input type="checkbox" id="waitstop"> Walking tours: pause at each stop until I arrive</label>
+    <div id="phone-box" hidden>
+      <h3 class="sec">Phone voice</h3>
+      <p class="fine" id="voice-hint">Only used when you choose it above. It stops when you leave the app, and its voices can differ from part to part. Better voices are usually under your phone's text-to-speech settings (for example "Google" or "Enhanced" voices) and appear here once installed.</p>
+      <label class="field">Phone voice
+        <select id="voice"></select>
+      </label>
+      <div id="speaker-voices" hidden></div>
+      <label class="field">Say it differently
+        <textarea id="pron" rows="4" placeholder="Alzette = Al-zet&#10;Coudenberg = Cow-den-berg"></textarea>
+      </label>
+      <p class="fine">One per line, <em>word = how it should be said</em>. Only affects the phone voice. To fix how the natural voices say a name, ask Claude: that change is made once in the repository and the audio is remade for every device.</p>
+      <button class="ghost wide" id="test-voice" type="button">Test this voice</button>
+    </div>
+    <h3 class="sec">Request relay (optional)</h3>
+    <p class="fine">Lets the Create tab send requests straight to Claude. Ask Patrick for the address and the family code, or follow relay/README.md in the repository. Both stay on this phone only.</p>
+    <label class="field">Relay address
+      <input id="relay-url" type="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://travel-podcasts-relay.example.workers.dev">
+    </label>
+    <label class="field">Family code
+      <input id="relay-code" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
+    </label>
+    <button class="ghost wide" id="relay-test" type="button">Save and test</button>
+    <p class="fine" id="relay-status" role="status"></p>
+    <h3 class="sec">GitHub key (optional)</h3>
+    <p class="fine">Lets this phone delete episodes from GitHub. The key stays on this phone only. On github.com open Settings, Developer settings, Fine-grained tokens. Choose <em>Only select repositories</em> and pick travel-podcasts. Under Repository permissions set <em>Contents</em> to <em>Read and write</em>. Pick a short expiry.</p>
+    <label class="field">Key
+      <input id="gh-token" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="github_pat_...">
+    </label>
+    <button class="ghost wide" id="gh-check" type="button">Save and check</button>
+    <p class="fine" id="gh-status" role="status"></p>
+    <h3 class="sec">Library storage</h3>
+    <div id="storage"></div>
+    <h3 class="sec">This app</h3>
+    <button class="ghost wide" id="share-app" type="button">Share this app with someone</button>
+    <p class="fine" id="app-version"></p>
+    <button class="ghost wide" id="app-reload" type="button">Get the newest version now</button>
+    <button class="primary wide" value="close">Done</button>
+  </form>
+</dialog>
+
+<!-- Add episode -->
+<dialog id="dlg-add">
+  <form method="dialog" class="sheet" id="add-form">
+    <h2>Add an episode</h2>
+    <p class="fine">Paste an episode in markdown (title line, then <code>## Welcome</code> and <code>## Chapter …</code> sections), or choose a .md file. Episodes added here stay on this phone. To keep one on every device, ask Claude to add it to the repository.</p>
+    <label class="field">Title
+      <input id="add-title" type="text" placeholder="The Story of Bruges">
+    </label>
+    <label class="field">Markdown file
+      <input id="add-file" type="file" accept=".md,.markdown,.txt,text/markdown,text/plain">
+    </label>
+    <label class="field">Or paste the text
+      <textarea id="add-text" rows="7"></textarea>
+    </label>
+    <p class="error" id="add-err" role="alert" hidden></p>
+    <button class="primary wide" id="add-save" type="button">Save episode</button>
+    <button class="ghost wide" value="close">Cancel</button>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>
