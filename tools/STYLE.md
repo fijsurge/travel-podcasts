@@ -15,6 +15,11 @@ Every two-host episode follows this. The facts stay exactly as accurate as befor
 - Mock outrage, understatement and deadpan work well. Sarcasm about people is out.
 - When the subject is a tragedy (war, victims, atrocities), drop the jokes completely and talk plainly. Humor never comes at the expense of accuracy or of victims.
 
+## Delivery tags
+- `[laugh]`, `[chuckle]`, `[sigh]`, `[gasp]`, `[groan]` at the end of a line make Chatterbox actually perform it (Kokoro drops them silently, so this only matters for two-host episodes, never solo narration).
+- Sparing, not sprinkled: three to six per episode, each on a line that has earned it -- the payoff of a running bet, Ben caught out and allowing it, a line that really lands. Never two in the same breath, never in the serious parts.
+- Always at the end of the line, after the full stop: `Anna: There it is. The hand. I win. [laugh]`
+
 ## Turns
 - Most turns are one to three sentences, under 45 words. Many are one to four words: "Right." "Wait, what?" "Ha."
 - Never more than two long turns in a row from one host. Break an explanation up with a question, a reaction, or a guess.

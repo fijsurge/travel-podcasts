@@ -32,8 +32,12 @@
   const saveProgress = () => store.set('tp.progress', progress);
 
   /* ---------- episode parsing (same rules as tools/build.py) ---------- */
+  // Delivery tags such as [laugh] are performed by the natural-audio pipeline (Chatterbox) but never shown or
+  // spoken anywhere else: repo episodes keep them in library.json so make_audio.py can still see them, so
+  // anything that reads paragraphs directly for display or phone-voice speech (buildUnits, search) strips them here.
+  const stripTags = (t) => t.replace(/\s*\[(?:laugh|chuckle|sigh|cough|gasp|groan|sniff|shush|clear throat)\]/gi, '');
   const clean = (t) =>
-    t.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').replace(/\s*\[(?:laugh|chuckle|sigh|cough|gasp|groan|sniff|shush|clear throat)\]/gi, '').replace(/[*_`]+/g, '').replace(/[ \t]+/g, ' ').trim();
+    stripTags(t.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')).replace(/[*_`]+/g, '').replace(/[ \t]+/g, ' ').trim();
 
   function parseEpisode(raw, fallbackTitle, id) {
     let meta = {};
@@ -136,7 +140,7 @@
       const m = text.match(SPEAKER_RE);
       if (m && speakers && speakers.includes(m[1])) { speaker = m[1]; text = text.slice(m[0].length); }
       who[pi] = speaker;
-      splitSentences(text).forEach((t) => units.push({ p: pi, text: t, speaker }));
+      splitSentences(stripTags(text)).forEach((t) => units.push({ p: pi, text: t, speaker }));
     });
     return { units, who };
   }
@@ -1450,7 +1454,7 @@
     searchIdx = library.map((e) => ({
       e,
       head: fold([e.title, e.place, e.blurb].join(' ')),
-      ch: e.chapters.map((c) => { const raw = c.paragraphs.map((p) => p.replace(SPEAKER_RE, '')).join(' '); return { raw, low: fold(raw), label: fold(c.label) }; }),
+      ch: e.chapters.map((c) => { const raw = c.paragraphs.map((p) => stripTags(p.replace(SPEAKER_RE, ''))).join(' '); return { raw, low: fold(raw), label: fold(c.label) }; }),
     }));
   }
   function highlight(text, tokens) {

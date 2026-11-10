@@ -92,7 +92,7 @@ Anna: So the merchants moved?
 
 Ben: They moved to Antwerp, where the river was deep and the harbor was open. Foreign trading houses set up here in the late 15th century.
 
-Anna: Like a business park for the whole continent.
+Anna: Like a business park for the whole continent. [chuckle]
 
 Ben: Roughly. And the money came in waves. Pepper from the Portuguese. Silver from the Spanish route to the Americas. Cloth from the north.
 
@@ -106,7 +106,7 @@ Ben: Just for trading. Before that, merchants met in squares and inns. Antwerp g
 
 Anna: Which means they invented the office.
 
-Ben: That is not quite the word. But I'll allow it.
+Ben: That is not quite the word. But I'll allow it. [chuckle]
 
 Anna: I'll take it. So rich city. Beautiful buildings, I assume?
 
@@ -188,7 +188,7 @@ Anna: Oldest in the world. Good fact for the pocket.
 
 Ben: It's a World Heritage Site, since 2005. And that Resurrection by Rubens? It was painted as a memorial for Jan Moretus. So the printer and the painter connect.
 
-Anna: Good. I like a link.
+Anna: Good. I like a link. [chuckle]
 
 ## Chapter 5: What to look for tomorrow
 
@@ -200,11 +200,11 @@ Anna: Is it a castle?
 
 Ben: What's left of one. It was once a prison, from 1303 to 1827. It's now a visitor center.
 
-Anna: A prison for over 500 years. Ouch.
+Anna: A prison for over 500 years. Ouch. [chuckle]
 
 Ben: Then the Grote Markt, the main square. The town hall. The guild houses. And in the middle, a fountain from 1887 by Jef Lambeaux, with Brabo on top, holding up the giant's hand.
 
-Anna: There it is. The hand. I win.
+Anna: There it is. The hand. I win. [laugh]
 
 Ben: You win. Three women stand around the base, holding a boat and a fort, and the giant lies headless below.
 
