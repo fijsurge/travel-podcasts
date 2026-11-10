@@ -1,5 +1,8 @@
 // Travel Podcasts relay: a Cloudflare Worker (free plan) that turns a request from the app into a GitHub issue.
 // Claude reads the open issues labelled "episode-request", writes each episode, and closes the issue when it is published.
+// An imported itinerary (kind: "itinerary") is the same "episode-request" issue, just with a Google Doc's plain-text
+// export fetched and embedded server-side when a doc link is given -- the only URL this Worker will ever fetch for
+// someone else's content, and only from docs.google.com.
 //
 // Two secrets must be set on the Worker (Settings > Variables and Secrets):
 //   GITHUB_TOKEN  fine-grained GitHub token for this one repository, permission "Issues: Read and write" only
@@ -8,8 +11,29 @@ const REPO = 'fijsurge/travel-podcasts';
 const SITE = 'https://fijsurge.github.io';
 const LABEL = 'episode-request';
 const FEEDBACK_LABEL = 'episode-feedback';
-const MAX_OPEN = 15;      // refuse new requests while this many are still waiting
-const MAX_TEXT = 6000;    // characters
+const MAX_OPEN = 15;         // refuse new requests while this many are still waiting
+const MAX_TEXT = 6000;       // characters
+const MAX_ITINERARY_TEXT = 20000; // an imported itinerary can run much longer than a quick request
+
+// Only ever fetches a Google Doc's own plain-text export -- never an arbitrary URL the app happens to send.
+function docExportUrl(link) {
+  let u;
+  try { u = new URL(String(link || '')); } catch (e) { return null; }
+  if (u.hostname !== 'docs.google.com') return null;
+  const m = u.pathname.match(/\/document\/d\/([^/]+)/);
+  return m ? 'https://docs.google.com/document/d/' + m[1] + '/export?format=txt' : null;
+}
+async function fetchDoc(link) {
+  const url = docExportUrl(link);
+  if (!url) return { ok: false, error: 'That does not look like a Google Doc link.' };
+  let res;
+  try { res = await fetch(url, { redirect: 'follow' }); } catch (e) { return { ok: false, error: 'Could not reach that doc.' }; }
+  const notShared = 'Could not read that doc. Share it so "anyone with the link can view", then try again.';
+  if (!res.ok) return { ok: false, error: notShared };
+  const text = (await res.text()).trim();
+  if (!text || /^<!doctype html/i.test(text)) return { ok: false, error: notShared }; // an unshared doc redirects to a sign-in page, not the text
+  return { ok: true, text: text.slice(0, MAX_ITINERARY_TEXT) };
+}
 
 function reply(body, status, extra) {
   return new Response(status === 204 ? null : JSON.stringify(body), {
@@ -58,11 +82,18 @@ export default {
     if (data && data.ping) return reply({ ok: true, message: 'Connected.', feedback: true }, 200);
 
     const feedback = !!(data && data.kind === 'feedback');
+    const itinerary = !!(data && data.kind === 'itinerary');
     const label = feedback ? FEEDBACK_LABEL : LABEL;
-    const text = String((data && data.text) || '').trim();
+    let text = String((data && data.text) || '').trim();
     const title = String((data && data.title) || (feedback ? 'Problem report' : 'New episode')).replace(/\s+/g, ' ').trim().slice(0, 120);
+
+    if (itinerary && data.docUrl) {
+      const doc = await fetchDoc(data.docUrl);
+      if (doc.ok) text = (text ? text + '\n\n' : '') + 'Itinerary (fetched from the Google Doc):\n\n' + doc.text;
+      else if (!text) return reply({ ok: false, error: doc.error }, 400); // no pasted text to fall back on
+    }
     if (text.length < (feedback ? 10 : 20)) return reply({ ok: false, error: 'The request is too short.' }, 400);
-    if (text.length > MAX_TEXT) return reply({ ok: false, error: 'The request is too long.' }, 413);
+    if (text.length > (itinerary ? MAX_ITINERARY_TEXT : MAX_TEXT)) return reply({ ok: false, error: 'The request is too long.' }, 413);
 
     const open = await gh(env, '/repos/' + REPO + '/issues?labels=' + label + '&state=open&per_page=' + (MAX_OPEN + 1));
     if (!open.ok) return reply({ ok: false, error: 'GitHub did not accept the relay key (' + open.status + ').' }, 502);

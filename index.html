@@ -58,43 +58,73 @@
 
   <!-- Create -->
   <section id="view-create" class="view" hidden>
-    <h2 class="view-h">Ask for a new episode</h2>
-    <p class="lede">Fill in what you know. Claude writes the script, and the audio then appears in your library. Allow a few hours for the script and about 40 minutes for the audio.</p>
-    <form id="create-form" class="stack" autocomplete="off">
-      <label class="field">What kind of episode?
-        <select id="cr-kind">
-          <option value="overview">Overview (10 to 15 min)</option>
-          <option value="walk">Walking tour (30 to 45 min)</option>
-          <option value="deep">Deep dive (an hour or more)</option>
-        </select>
-      </label>
-      <label class="field">Place
-        <input id="cr-place" type="text" placeholder="Bruges">
-      </label>
-      <label class="field" id="cr-stops-wrap">Stops, in order (one per line)
-        <textarea id="cr-stops" rows="5" placeholder="Markt square&#10;Belfry&#10;Burg square"></textarea>
-      </label>
-      <label class="field"><span id="cr-time-label">How long will you be out walking?</span>
-        <input id="cr-time" type="text" placeholder="About 2 hours, with a coffee stop">
-      </label>
-      <label class="field">What you care about
-        <input id="cr-interests" type="text" placeholder="History, architecture, a good coffee stop">
-      </label>
-      <label class="field">Style
-        <select id="cr-style">
-          <option value="two hosts, lively and conversational">Two hosts, lively</option>
-          <option value="one narrator">One narrator</option>
-        </select>
-      </label>
-      <label class="field">Anything practical
-        <textarea id="cr-notes" rows="3" placeholder="Hills, weather plan, listening on a shared speaker"></textarea>
-      </label>
-      <button class="primary wide" id="cr-send" type="button" hidden>Send to Claude</button>
-      <button class="primary wide" id="cr-copy" type="button">Copy request for Claude</button>
-    </form>
-    <p class="fine" id="cr-status" role="status"></p>
-    <textarea id="cr-out" rows="9" readonly hidden aria-label="Your request"></textarea>
-    <p class="fine" id="cr-hint">Paste it into your chat with Claude. To send requests straight from the app, set up the relay in Settings (see relay/README.md in the repository).</p>
+    <div class="tabs" id="create-tabs" role="group" aria-label="Create">
+      <button type="button" data-ctab="new">New episode</button>
+      <button type="button" data-ctab="import">Import an itinerary</button>
+    </div>
+    <div id="pane-create-new">
+      <h2 class="view-h">Ask for a new episode</h2>
+      <p class="lede">Fill in what you know. Claude writes the script, and the audio then appears in your library. Allow a few hours for the script and about 40 minutes for the audio.</p>
+      <form id="create-form" class="stack" autocomplete="off">
+        <label class="field">What kind of episode?
+          <select id="cr-kind">
+            <option value="overview">Overview (10 to 15 min)</option>
+            <option value="walk">Walking tour (30 to 45 min)</option>
+            <option value="deep">Deep dive (an hour or more)</option>
+          </select>
+        </label>
+        <label class="field">Place
+          <input id="cr-place" type="text" placeholder="Bruges">
+        </label>
+        <label class="field" id="cr-stops-wrap">Stops, in order (one per line)
+          <textarea id="cr-stops" rows="5" placeholder="Markt square&#10;Belfry&#10;Burg square"></textarea>
+        </label>
+        <label class="field"><span id="cr-time-label">How long will you be out walking?</span>
+          <input id="cr-time" type="text" placeholder="About 2 hours, with a coffee stop">
+        </label>
+        <label class="field">What you care about
+          <input id="cr-interests" type="text" placeholder="History, architecture, a good coffee stop">
+        </label>
+        <label class="field">Style
+          <select id="cr-style">
+            <option value="two hosts, lively and conversational">Two hosts, lively</option>
+            <option value="one narrator">One narrator</option>
+          </select>
+        </label>
+        <label class="field">Anything practical
+          <textarea id="cr-notes" rows="3" placeholder="Hills, weather plan, listening on a shared speaker"></textarea>
+        </label>
+        <button class="primary wide" id="cr-send" type="button" hidden>Send to Claude</button>
+        <button class="primary wide" id="cr-copy" type="button">Copy request for Claude</button>
+      </form>
+      <p class="fine" id="cr-status" role="status"></p>
+      <textarea id="cr-out" rows="9" readonly hidden aria-label="Your request"></textarea>
+      <p class="fine" id="cr-hint">Paste it into your chat with Claude. To send requests straight from the app, set up the relay in Settings (see relay/README.md in the repository).</p>
+    </div>
+    <div id="pane-create-import" hidden>
+      <h2 class="view-h">Import an itinerary</h2>
+      <p class="lede">Paste a trip itinerary &mdash; from Google Docs, ChatGPT, Gemini, wherever &mdash; and Claude turns it into episodes, splitting each day into walkable stretches. This can take longer than a single episode, since it may become several.</p>
+      <form id="import-form" class="stack" autocomplete="off">
+        <label class="field">Trip name
+          <input id="im-place" type="text" placeholder="Lake Como">
+        </label>
+        <label class="field">Google Doc link (optional)
+          <input id="im-doc" type="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://docs.google.com/document/d/...">
+        </label>
+        <p class="fine">Share it so "anyone with the link can view," then paste the link here.</p>
+        <label class="field">Or paste the itinerary
+          <textarea id="im-text" rows="10" placeholder="Paste the itinerary here"></textarea>
+        </label>
+        <label class="field">Anything else to know
+          <textarea id="im-notes" rows="3" placeholder="Allergies, pace, a must-see stop"></textarea>
+        </label>
+        <button class="primary wide" id="im-send" type="button" hidden>Send to Claude</button>
+        <button class="primary wide" id="im-copy" type="button">Copy request for Claude</button>
+      </form>
+      <p class="fine" id="im-status" role="status"></p>
+      <textarea id="im-out" rows="9" readonly hidden aria-label="Your request"></textarea>
+      <p class="fine" id="im-hint">Paste it into your chat with Claude. To send requests straight from the app, set up the relay in Settings (see relay/README.md in the repository).</p>
+    </div>
     <div id="cr-recent" hidden>
       <h3 class="sec">Your recent requests</h3>
       <p class="fine" id="cr-list-note" role="status"></p>

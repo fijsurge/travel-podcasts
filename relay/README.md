@@ -37,6 +37,14 @@ The **Report a problem** button (player and walk screen) sends a note through th
 (`tools/pronunciations.json`), stop pins (`stops:` in the episode), or script facts, rebuilds only the changed parts,
 and closes the issue with a comment.
 
+## Importing an itinerary
+**Create** > **Import an itinerary** sends a pasted itinerary, or a Google Doc link, the same way as a regular request
+(same `episode-request` label). When a doc link is given, the Worker fetches that doc's plain-text export itself and
+embeds it in the issue, so Claude does not need its own access to the doc. This is the only time the Worker fetches a
+URL on your behalf, and only ever from `docs.google.com` -- share the doc as "anyone with the link can view" first.
+One itinerary can turn into several episodes (the request asks Claude to split a day that is not walkable end to end,
+such as a ferry between towns, into one walking tour per walkable stretch).
+
 **Updating the Worker:** when `relay/worker.js` changes, open the Worker in Cloudflare, **Edit code**, replace everything
 with the new file, and **Deploy**. Secrets stay as they are. This is optional: with the older Worker, the app still sends reports (as requests titled "Problem report:") and the scheduled task handles them the same way.
 

@@ -283,6 +283,14 @@
     if (c.idle) return { kind: 'idle', text: `Audio not started · ${done} of ${total} parts ready` };
     return { kind: 'unknown', text: 'Checking audio…' };
   }
+  // Same idea as episodeAudioSummary, but across every episode one itinerary import produced.
+  const KIND_RANK = ['making', 'waiting', 'failed', 'idle', 'unknown'];
+  function tripAudioSummary(eps) {
+    const ready = eps.filter((e) => audioCount(e) >= e.chapters.length).length;
+    const kinds = eps.filter((e) => audioCount(e) < e.chapters.length).map((e) => episodeAudioSummary(e).kind);
+    const kind = KIND_RANK.find((k) => kinds.includes(k)) || 'unknown';
+    return { kind, text: `${ready} of ${eps.length} episode${eps.length === 1 ? '' : 's'} ready` };
+  }
   function statusPill(e) {
     const sm = episodeAudioSummary(e);
     const p = mk('div', 'pill ' + sm.kind, '');
@@ -873,6 +881,7 @@
   let hidden = store.get('tp.hidden', []);
   let playlists = store.get('tp.playlists', []);
   let tab = store.get('tp.tab', 'episodes');
+  let cmode = store.get('tp.cmode', 'new'); // Create tab: 'new' (ask for one episode) or 'import' (an itinerary)
   let placeFilter = '';
   let showHidden = false;
   let curPl = null; // the playlist the open episode is being played from
@@ -1229,7 +1238,7 @@
   const online = () => navigator.onLine !== false;
   function syncOnline() {
     const bar = $('offline-bar'); if (bar) bar.hidden = online();
-    if (view === 'create') syncCreateForm();
+    if (view === 'create') { syncCreateForm(); syncImportForm(); }
     if (view === 'home' || view === 'library') renderLibrary();
     if (online()) flushOutbox();
   }
@@ -1265,23 +1274,26 @@
     // with the same per-chapter progress the library card and the audio banner use, until every part is ready.
     const making = [];
     items.filter((x) => x.state === 'closed').forEach((x) => {
-      const found = requestEpisode(x.title);
-      if (found && audioCount(found) < found.chapters.length) making.push({ title: x.title, ep: found });
+      const eps = requestEpisodes(x.title); // the full group (tripAudioSummary needs the ready ones too, to count against)
+      if (eps.length && eps.some((e) => audioCount(e) < e.chapters.length)) making.push({ title: x.title, eps });
     });
     const all = queued.concat(open).concat(making);
     if (!all.length) return;
     const sec = mk('section', 'shelf inworks', '');
     sec.append(mk('h2', '', 'In progress'));
     all.forEach((x) => {
-      const row = mk(x.ep ? 'button' : 'div', 'iw' + (x.ep ? ' iw-link' : ''), '');
-      if (x.ep) row.type = 'button';
+      const row = mk(x.eps ? 'button' : 'div', 'iw' + (x.eps ? ' iw-link' : ''), '');
+      if (x.eps) row.type = 'button';
       row.append(mk('span', 'iw-t', x.title.replace(/^Episode request:\s*/i, '')));
-      if (x.ep) {
-        const sm = episodeAudioSummary(x.ep);
+      if (x.eps) {
+        const sm = x.eps.length === 1 ? episodeAudioSummary(x.eps[0]) : tripAudioSummary(x.eps);
         const line = mk('span', 'rq-eta pill ' + sm.kind, '');
         line.append(mk('span', 'dot', ''), document.createTextNode(' ' + sm.text));
         row.append(line);
-        row.addEventListener('click', () => { location.hash = '#/e/' + encodeURIComponent(x.ep.id); });
+        row.addEventListener('click', () => {
+          if (x.eps.length === 1) location.hash = '#/e/' + encodeURIComponent(x.eps[0].id);
+          else openTripInLibrary(x.eps[0].place);
+        });
       } else {
         const eta = mk('span', 'rq-eta', etaText(x.state)); eta.dataset.eta = x.state; row.append(eta);
       }
@@ -1579,6 +1591,68 @@
     btn.disabled = false;
   }
 
+  /* ---------- import: turn a pasted (or linked) itinerary into one request that can become several episodes ---------- */
+  function buildItineraryRequest() {
+    const place = $('im-place').value.trim();
+    const doc = $('im-doc').value.trim();
+    const text = $('im-text').value.trim();
+    const notes = $('im-notes').value.trim();
+    const lines = [
+      'Please turn this trip itinerary into one or more Travel Podcasts episodes and add them to the travel-podcasts repo. Follow tools/STYLE.md and the format of the existing episodes (front matter with title, place, order, blurb, speakers, voices and format, then a Welcome and numbered Chapters, then Sources consulted). Two-host episodes use Anna and Ben with engine: chatterbox; walking tours also need stops: (latitude,longitude for each stop), hints: (one line on how to find each stop) and maps: (one Google Maps search per stop, the landmark name and city, separated by |).',
+      '',
+      `Trip: ${place || '(not given)'}`,
+    ];
+    if (doc) lines.push(`Itinerary (Google Doc): ${doc}`, 'It is shared as "anyone with the link can view": read it directly if you can.');
+    if (text) lines.push('Itinerary:', '', text);
+    lines.push(
+      '',
+      'Treat named sights and landmarks as real stops. Treat meals and reservations as timing context for pacing a walk (when it needs to end, roughly), not as narrated stops themselves.',
+      'Where a day is not walkable end to end (a ferry, a drive, a stop before heading back), split it into a separate walking-tour episode per walkable stretch rather than one episode spanning the gap. Use the itinerary’s own transitions to decide where to split.',
+      'Where the itinerary offers an explicit alternative ("X or Y"), mention both naturally in the narration rather than silently choosing one.',
+      `Give every episode made from this trip the same place ("${place || '(the trip name)'}"), so they group together in the app.`,
+    );
+    if (notes) lines.push('', 'Also: ' + notes);
+    lines.push('', 'Research the facts on the web, keep to what the sources support, and list them under Sources consulted. Write years as numerals, except three-digit years, which are spelled out in words. Push it to main so the audio is built automatically.');
+    return lines.join('\n');
+  }
+  function syncImportForm() {
+    const ready = relayReady();
+    $('im-send').hidden = !ready;
+    $('im-copy').classList.toggle('ghost', ready); $('im-copy').classList.toggle('primary', !ready);
+    $('im-copy').textContent = ready ? 'Copy the request instead' : 'Copy request for Claude';
+    $('im-send').textContent = online() ? 'Send to Claude' : 'Save to send when online';
+    $('im-hint').hidden = ready;
+    if (ready) loadRequests();
+  }
+  async function sendImportRequest() {
+    const place = $('im-place').value.trim(), doc = $('im-doc').value.trim(), text = $('im-text').value.trim();
+    if (!place) { $('im-status').textContent = 'Give the trip a name first.'; $('im-place').focus(); return; }
+    if (!doc && !text) { $('im-status').textContent = 'Paste a Google Doc link or the itinerary text.'; $('im-text').focus(); return; }
+    const btn = $('im-send'), out = $('im-status');
+    btn.disabled = true; out.textContent = 'Sending…';
+    const label = 'Itinerary: ' + place;
+    const body = { kind: 'itinerary', title: label, text: buildItineraryRequest(), docUrl: doc || undefined };
+    const done = (queued) => {
+      out.className = 'cr-ok';
+      out.textContent = queued
+        ? 'No connection right now. Saved on this phone as "' + label + '" and goes out by itself the next time the app is open with a connection.'
+        : 'Sent: ' + label + '. ' + etaText('open') + ' This can take longer than a single episode, since it may become several.';
+      showToast(queued ? 'Saved. Will send when you are online.' : 'Request sent.');
+      $('import-form').reset(); $('im-out').hidden = true; syncImportForm();
+      justSent = { title: label, at: Date.now() };
+      loadRequests();
+      out.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      if (!queued) setTimeout(loadRequests, 3000);
+    };
+    try {
+      if (!navigator.onLine) throw new TypeError('offline');
+      const r = await relayPost(body);
+      if (r.ok) done(false);
+      else { out.className = 'fine'; out.textContent = (r.data && r.data.error) || ('The relay answered ' + r.status + '.'); }
+    } catch (err) { queueOutbox({ kind: 'request', title: label, body }); done(true); }
+    btn.disabled = false;
+  }
+
   /* ---------- outbox: requests made with no connection wait on the phone and go out later ---------- */
   const outbox = () => store.get('tp.outbox', []) || [];
   function queueOutbox(item) { const q = outbox(); q.push(Object.assign({ id: Date.now() + '-' + Math.random().toString(36).slice(2, 6), at: Date.now() }, item)); store.set('tp.outbox', q); }
@@ -1701,6 +1775,21 @@
     if (new Set(hits.map(famKey)).size > 1) return null;
     return hits.sort((x, y) => (isNew(y) - isNew(x)) || (y.order - x.order))[0];
   }
+  // An imported itinerary can become several episodes, all sharing one place ("Itinerary: Lake Como" ->
+  // every episode with place "Lake Como"). A plain request still resolves to at most one, via requestEpisode.
+  function requestEpisodes(title) {
+    const im = String(title).replace(/^Episode request:\s*/i, '').match(/^Itinerary:\s*(.+)$/i);
+    if (im) {
+      const place = fold(im[1].trim());
+      return library.filter((e) => !e.user && fold(e.place || '') === place);
+    }
+    const one = requestEpisode(title);
+    return one ? [one] : [];
+  }
+  function openTripInLibrary(place) {
+    placeFilter = place; tab = 'episodes'; store.set('tp.tab', tab);
+    location.hash = '#/library';
+  }
   function drawRequests(items, note) {
     const ul = $('cr-list'); ul.textContent = '';
     const queued = outbox().map((x) => ({ title: x.title, state: 'queued' }));
@@ -1708,12 +1797,18 @@
     if (justSent && Date.now() - justSent.at < 300000 && !items.some((x) => x.title.replace(/^Episode request:\s*/i, '') === justSent.title)) items = [{ title: justSent.title, state: 'open' }].concat(items);
     items.forEach((x) => {
       const li = mk('li', ''), t = mk('span', 'rq-t', x.title.replace(/^Episode request:\s*/i, ''));
-      const found = x.state === 'closed' ? requestEpisode(x.title) : null;
-      if (found) {
-        const ac = audioCount(found), total = found.chapters.length;
+      const found = x.state === 'closed' ? requestEpisodes(x.title) : [];
+      if (found.length === 1) {
+        const ep = found[0], ac = audioCount(ep), total = ep.chapters.length;
         const b = mk('button', 'rq-s done link', ac >= total ? 'Open' : 'Open \u00b7 audio ' + ac + '/' + total);
-        b.type = 'button'; b.setAttribute('aria-label', 'Open ' + found.title);
-        b.addEventListener('click', () => { location.hash = '#/e/' + encodeURIComponent(found.id); });
+        b.type = 'button'; b.setAttribute('aria-label', 'Open ' + ep.title);
+        b.addEventListener('click', () => { location.hash = '#/e/' + encodeURIComponent(ep.id); });
+        li.append(t, b);
+      } else if (found.length > 1) {
+        const sm = tripAudioSummary(found);
+        const b = mk('button', 'rq-s done link', sm.text);
+        b.type = 'button'; b.setAttribute('aria-label', 'Open episodes for ' + x.title.replace(/^Episode request:\s*/i, ''));
+        b.addEventListener('click', () => openTripInLibrary(found[0].place));
         li.append(t, b);
       } else li.append(t, mk('span', 'rq-s' + (x.state === 'closed' ? ' done' : ''), x.state === 'closed' ? 'Done' : x.state === 'queued' ? 'Waiting to send' : 'Waiting'));
       if (x.state !== 'closed') { const eta = mk('span', 'rq-eta', etaText(x.state)); eta.dataset.eta = x.state; li.append(eta); }
@@ -2684,7 +2779,12 @@
     runSearch($('search-input').value);
     if (!$('search-input').value) setTimeout(() => { try { $('search-input').focus(); } catch (e) { /* optional */ } }, 50);
   }
-  function showCreate() { setView('create'); syncCreateForm(); }
+  function syncCreateTabs() {
+    document.querySelectorAll('#create-tabs button').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.ctab === cmode)));
+    $('pane-create-new').hidden = cmode !== 'new';
+    $('pane-create-import').hidden = cmode !== 'import';
+  }
+  function showCreate() { setView('create'); syncCreateTabs(); syncCreateForm(); syncImportForm(); }
 
   function showPlaylist(id) {
     const p = plById(id);
@@ -2924,6 +3024,16 @@
     $('cr-kind').addEventListener('change', () => { syncCreateForm(); $('cr-status').className = 'fine'; $('cr-status').textContent = ''; });
     $('cr-send').addEventListener('click', sendRequest);
     $('cr-refresh').addEventListener('click', loadRequests);
+    document.querySelectorAll('#create-tabs button').forEach((b) => b.addEventListener('click', () => {
+      cmode = b.dataset.ctab; store.set('tp.cmode', cmode); syncCreateTabs();
+    }));
+    $('im-send').addEventListener('click', sendImportRequest);
+    $('im-copy').addEventListener('click', async () => {
+      const text = buildItineraryRequest();
+      const out = $('im-out'); out.value = text; out.hidden = false;
+      try { await navigator.clipboard.writeText(text); showToast('Copied. Paste it into your chat with Claude.'); }
+      catch (err) { out.focus(); out.select(); showToast('Press and hold the text to copy it.'); }
+    });
     $('relay-test').addEventListener('click', async () => {
       const out = $('relay-status');
       store.set('tp.relay', { url: $('relay-url').value.trim(), code: $('relay-code').value.trim() });
